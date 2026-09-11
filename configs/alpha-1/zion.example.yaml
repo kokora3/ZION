@@ -1,0 +1,13 @@
+# Phase 1 template only. It is not parsed by the node yet and contains no secrets.
+# zion-alpha-1 values that are not frozen in SPEC.md remain explicit placeholders.
+network_id: zion-alpha-1
+data_directory: <set-a-local-data-directory>
+listen_addresses: [] # Configure explicitly; do not copy fake peer endpoints.
+bootstrap_peers: [] # Add verified, replaceable endpoints with peer identities later.
+max_peers: <set-before-use>
+max_storage_gb: <set-before-use>
+reserve_free_gb: <set-before-use>
+download_limit_mbps: <set-before-use>
+upload_limit_mbps: <set-before-use>
+api_bind_address: 127.0.0.1
+validator_enabled: false # This never grants validator authority by itself.

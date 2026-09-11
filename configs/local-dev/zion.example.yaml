@@ -1,0 +1,13 @@
+# Phase 1 local-development template only. It is not parsed by the node yet.
+# Use a compatibility-approved network identifier before connecting to any peer.
+network_id: <set-for-local-development>
+data_directory: <set-a-local-data-directory>
+listen_addresses: []
+bootstrap_peers: []
+max_peers: <set-before-use>
+max_storage_gb: <set-before-use>
+reserve_free_gb: <set-before-use>
+download_limit_mbps: <set-before-use>
+upload_limit_mbps: <set-before-use>
+api_bind_address: 127.0.0.1
+validator_enabled: false # Local configuration is not validator authorization.
