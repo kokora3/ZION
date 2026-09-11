@@ -1,19 +1,21 @@
-// Package protocol contains versioned, runtime-independent protocol identifiers
-// and compatibility primitives. Canonical types and object/schema versioning are
-// intentionally deferred beyond Phase 1.
+// Package protocol contains runtime-independent ZION protocol identifiers,
+// canonical encoding, and content-derived object identity primitives.
 package protocol
 
 import "fmt"
 
+type ProtocolVersion string
+type NetworkID string
+type SchemaVersion uint16
+
 const (
-	// NetworkID is the frozen identifier for the first ZION alpha network.
-	NetworkID = "zion-alpha-1"
+	CurrentProtocolVersion ProtocolVersion = "0.1"
+	Alpha1NetworkID        NetworkID       = "zion-alpha-1"
+	Implementation                         = "Go Native ZION Node"
+)
 
-	// Version is the ZION protocol version represented by this repository.
-	Version = "0.1"
-
-	// Implementation is the v0.1 reference implementation name.
-	Implementation = "Go Native ZION Node"
+const (
+	Version = string(CurrentProtocolVersion)
 )
 
 // Role names v0.1 operational capabilities. Roles may overlap; validator
@@ -28,5 +30,5 @@ const (
 
 // VersionString returns shared command-line version metadata.
 func VersionString(program string) string {
-	return fmt.Sprintf("%s: ZION protocol version %s (network %s; %s)", program, Version, NetworkID, Implementation)
+	return fmt.Sprintf("%s: ZION protocol version %s (network %s; %s)", program, CurrentProtocolVersion, Alpha1NetworkID, Implementation)
 }

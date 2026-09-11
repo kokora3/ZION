@@ -6,8 +6,8 @@ import (
 )
 
 func TestProtocolIdentifiers(t *testing.T) {
-	if NetworkID != "zion-alpha-1" {
-		t.Fatalf("NetworkID = %q, want zion-alpha-1", NetworkID)
+	if Alpha1NetworkID != "zion-alpha-1" {
+		t.Fatalf("Alpha1NetworkID = %q, want zion-alpha-1", Alpha1NetworkID)
 	}
 	if Version != "0.1" {
 		t.Fatalf("Version = %q, want 0.1", Version)

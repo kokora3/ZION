@@ -6,7 +6,7 @@ Current network: `zion-alpha-1`. This is alpha software, not mainnet: history ma
 
 ZION Protocol v0.1 is a Minimum Decentralized Product: enough independent-node infrastructure to prove that people can discuss and curate AI-security knowledge without a mandatory central application database. The Go Native ZION Node is the v0.1 reference implementation. `SPEC.md` is the implementation source of truth.
 
-This repository currently contains only Phase 1 bootstrap scaffolding. It does not implement consensus, P2P networking, identity cryptography, registries, storage, governance, or a production API.
+This repository includes Phase 1 scaffolding and Phase 2 protocol primitives for canonical CBOR encoding, NFC-normalized protocol metadata, SHA-256 digests, and immutable content-derived Object IDs. It does not implement identities or signatures, consensus, P2P networking, registries, storage, governance, or a production API.
 
 ## Development
 
