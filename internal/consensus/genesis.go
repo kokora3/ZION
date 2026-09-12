@@ -37,6 +37,7 @@ type Genesis struct {
 	ChainID          string
 	AppState         []byte
 	Validators       []Validator
+	InitialState     chain.State
 }
 
 type appGenesis struct {
@@ -47,6 +48,10 @@ type appGenesis struct {
 }
 
 func NewGenesis(network protocol.NetworkID, validators []Validator) (Genesis, error) {
+	return NewGenesisWithState(network, validators, chain.Genesis(network))
+}
+
+func NewGenesisWithState(network protocol.NetworkID, validators []Validator, initialState chain.State) (Genesis, error) {
 	if network == "" {
 		return Genesis{}, fmt.Errorf("empty network ID")
 	}
@@ -79,7 +84,10 @@ func NewGenesis(network protocol.NetworkID, validators []Validator) (Genesis, er
 	if err != nil {
 		return Genesis{}, fmt.Errorf("hash validator set: %w", err)
 	}
-	stateHash, err := chain.Genesis(network).Hash()
+	if initialState.NetworkID != network {
+		return Genesis{}, fmt.Errorf("initial application state network mismatch")
+	}
+	stateHash, err := initialState.Hash()
 	if err != nil {
 		return Genesis{}, fmt.Errorf("hash application genesis: %w", err)
 	}
@@ -92,7 +100,7 @@ func NewGenesis(network protocol.NetworkID, validators []Validator) (Genesis, er
 	genesisID := protocol.HashBytes(appState)
 	chainID := fmt.Sprintf("%s-%s", network, hex.EncodeToString(genesisID.Digest[:6]))
 	return Genesis{NetworkID: network, StateHash: stateHash, ValidatorSetHash: validatorHash,
-		GenesisID: genesisID, ChainID: chainID, AppState: appState, Validators: normalized}, nil
+		GenesisID: genesisID, ChainID: chainID, AppState: appState, Validators: normalized, InitialState: initialState}, nil
 }
 
 // CometGenesis constructs engine configuration from public genesis data. The

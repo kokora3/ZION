@@ -60,7 +60,7 @@ A retired key's historical signature can remain cryptographically valid but is n
 
 ## Membership governance boundary
 
-`MembershipChange` is a reserved transaction type and is deterministically rejected in Phase 4. `PENDING`, `ACTIVE`, `SUSPENDED`, and `REVOKED` remain the membership-state vocabulary, but Phase 4 does not invent who may authorize transitions. Local configuration cannot authorize a membership change. Governance authorization and voting remain deferred.
+Direct MembershipChange remains deterministically rejected. PENDING, ACTIVE, SUSPENDED, and REVOKED remain the membership-state vocabulary; Phase 6 adds separately signed proposal, vote, finalization, and execution transactions as the only runtime authorization route. Local configuration cannot authorize a membership change.
 
 ## Deterministic resource bound
 

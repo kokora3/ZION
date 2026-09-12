@@ -22,7 +22,7 @@ Transactions are applied copy-on-write. A failed transaction must not partially 
 
 Cryptographically valid does not mean currently authorized. Canonical state enforces the next rotation sequence and the currently active old key, so replayed rotations and later authorization attempts by retired keys fail even when their historical signatures remain valid.
 
-Membership authority cannot come from local configuration. `MembershipChange` remains disabled until protocol governance authorization is specified. Private keys and Ed25519 seeds never enter canonical `State` or `Snapshot`; only public protocol material is stored.
+Membership authority cannot come from local configuration. Direct MembershipChange remains disabled; Phase 6 permits only a canonically approved governance proposal to execute a membership transition. Private keys and Ed25519 seeds never enter canonical State or Snapshot; only public protocol material is stored.
 
 The canonical transaction limit is the fixed protocol value 65,536 bytes and is enforced identically by every validator before other transaction validation. Consensus resource limits must be deterministic and bounded rather than derived from RAM, the operating system, environment variables, or unique local configuration. These controls and tests reduce risk but are not a claim of formal verification.
 
@@ -34,4 +34,16 @@ Validator consensus keys are a separate cryptographic identity domain from membe
 
 Malformed, oversized, wrong-network, unsupported, or non-canonical consensus-input transactions fail safely and cannot partially mutate state. Proposal processing evaluates state-dependent transactions in their supplied order. Finalized invalid transactions have deterministic results and leave state unchanged. CometBFT `AppHash` is exactly the raw SHA-256 digest carried by the Phase 4 `StateHash`; validators must agree on both.
 
-The alpha validator set is permissioned at genesis, contains four distinct equal-power consensus keys, and requires the engine's greater-than-two-thirds voting threshold. Loss of quorum stops liveness instead of permitting unsafe finalization. Runtime validator-set changes remain disabled until governance authorization exists. CometBFT databases and wire messages are engine implementation details, not ZION canonical state or compatibility formats. ZION does not claim to have formally verified CometBFT.
+The alpha validator set is permissioned at genesis, contains four distinct equal-power consensus keys, and requires the engine's greater-than-two-thirds voting threshold. Loss of quorum stops liveness instead of permitting unsafe finalization. Runtime changes require an executed canonical governance proposal and are emitted through ABCI; direct transactions and local configuration cannot authorize them. CometBFT databases and wire messages are engine implementation details, not ZION canonical state or compatibility formats. ZION does not claim to have formally verified CometBFT.
+
+## Phase 6 governance boundaries
+
+There is no governance superuser or local-admin bypass after deterministic genesis bootstrap. A governance vote is not a CometBFT consensus vote: governance gives one vote to each eligible ACTIVE IdentityID, independent of validator power, tokens, stake, reputation, identity age, or machine resources. PENDING, SUSPENDED, and REVOKED identities cannot vote.
+
+Proposal, vote, finalization, and execution signatures use separate network-bound domains. Votes are keyed by IdentityID, so rotating a member signing key cannot create a second vote. A proposal snapshots its sorted ACTIVE electorate when opened and still requires current ACTIVE authorization at vote time. Integer strict-two-thirds arithmetic avoids floating-point nondeterminism; ABSTAIN counts for the minimum three participants but is excluded from YES+NO.
+
+Execution revalidates current canonical state. Stale membership or validator-set preconditions fail atomically, and an approved proposal cannot execute twice. Validator changes require canonical approval, keep operator IdentityID separate from the consensus key, retain equal power 1, and cannot reduce the validator set below three.
+
+CheckTx never mutates proposal, vote, membership, or validator state; finalized ordered execution performs authorization again. Chain height, not wall clock, determines voting and finalization boundaries. Local time, filesystem state, APIs, randomness, and scheduling are not governance inputs.
+
+Phase 6 bounds canonical transactions at the existing 65,536-byte protocol limit, proposal payloads at 4,096 canonical bytes, and electorates/votes at 1,024 per proposal. Finalized proposal history remains canonical and is not pruned in this phase. These controls are not a claim of formal verification.

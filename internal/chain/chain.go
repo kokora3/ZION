@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kokora3/zion/internal/governance"
 	"github.com/kokora3/zion/internal/identity"
 	"github.com/kokora3/zion/internal/membership"
 	"github.com/kokora3/zion/internal/protocol"
@@ -16,12 +17,19 @@ import (
 type TransactionType string
 
 const (
-	IdentityCreate   TransactionType = "IdentityCreate"
-	KeyRotation      TransactionType = "KeyRotation"
-	MembershipChange TransactionType = "MembershipChange"
+	IdentityCreate     TransactionType = "IdentityCreate"
+	KeyRotation        TransactionType = "KeyRotation"
+	MembershipChange   TransactionType = "MembershipChange"
+	GovernanceProposal TransactionType = "GovernanceProposal"
+	GovernanceVote     TransactionType = "GovernanceVote"
+	GovernanceFinalize TransactionType = "GovernanceFinalize"
+	GovernanceExecute  TransactionType = "GovernanceExecute"
+	ValidatorSetChange TransactionType = "ValidatorSetChange"
 
 	TransactionSchema protocol.SchemaVersion = 1
-	StateSchema       protocol.SchemaVersion = 1
+	StateSchemaV1     protocol.SchemaVersion = 1
+	StateSchemaV2     protocol.SchemaVersion = 2
+	StateSchema                              = StateSchemaV1
 
 	// MaxTransactionBytes is a protocol constant, not a node configuration
 	// value. Every validator applies it to the canonical transaction bytes.
@@ -57,11 +65,15 @@ func ParseTxID(s string) (TxID, error) {
 // Transaction is the canonical chain envelope. The selected payload contains
 // the Phase 3 signatures/proofs; exactly one matching payload is accepted.
 type Transaction struct {
-	SchemaVersion  protocol.SchemaVersion         `cbor:"1,keyasint"`
-	NetworkID      protocol.NetworkID             `cbor:"2,keyasint"`
-	Type           TransactionType                `cbor:"3,keyasint"`
-	IdentityCreate *identity.IdentityGenesisProof `cbor:"4,keyasint,omitempty"`
-	KeyRotation    *identity.RotationProof        `cbor:"5,keyasint,omitempty"`
+	SchemaVersion      protocol.SchemaVersion            `cbor:"1,keyasint"`
+	NetworkID          protocol.NetworkID                `cbor:"2,keyasint"`
+	Type               TransactionType                   `cbor:"3,keyasint"`
+	IdentityCreate     *identity.IdentityGenesisProof    `cbor:"4,keyasint,omitempty"`
+	KeyRotation        *identity.RotationProof           `cbor:"5,keyasint,omitempty"`
+	GovernanceProposal *governance.ProposalAuthorization `cbor:"6,keyasint,omitempty"`
+	GovernanceVote     *governance.VoteAuthorization     `cbor:"7,keyasint,omitempty"`
+	GovernanceFinalize *governance.ActionAuthorization   `cbor:"8,keyasint,omitempty"`
+	GovernanceExecute  *governance.ActionAuthorization   `cbor:"9,keyasint,omitempty"`
 }
 
 func (tx Transaction) CanonicalBytes() ([]byte, error) {
@@ -79,25 +91,35 @@ func (tx Transaction) ID() (TxID, error) {
 type Code string
 
 const (
-	OK           Code = "OK"
-	WrongNetwork Code = "ERR_WRONG_NETWORK"
-	Unsupported  Code = "ERR_UNSUPPORTED"
-	Invalid      Code = "ERR_INVALID"
-	TooLarge     Code = "ERR_TRANSACTION_TOO_LARGE"
-	Exists       Code = "ERR_IDENTITY_EXISTS"
-	NotFound     Code = "ERR_IDENTITY_NOT_FOUND"
-	KeyNotActive Code = "ERR_KEY_NOT_ACTIVE"
-	Sequence     Code = "ERR_ROTATION_SEQUENCE"
+	OK                    Code = "OK"
+	WrongNetwork          Code = "ERR_WRONG_NETWORK"
+	Unsupported           Code = "ERR_UNSUPPORTED"
+	Invalid               Code = "ERR_INVALID"
+	TooLarge              Code = "ERR_TRANSACTION_TOO_LARGE"
+	Exists                Code = "ERR_IDENTITY_EXISTS"
+	NotFound              Code = "ERR_IDENTITY_NOT_FOUND"
+	KeyNotActive          Code = "ERR_KEY_NOT_ACTIVE"
+	Sequence              Code = "ERR_ROTATION_SEQUENCE"
+	GovernanceUnavailable Code = "ERR_GOVERNANCE_UNAVAILABLE"
+	NotEligible           Code = "ERR_NOT_ELIGIBLE"
+	ProposalExists        Code = "ERR_PROPOSAL_EXISTS"
+	ProposalNotFound      Code = "ERR_PROPOSAL_NOT_FOUND"
+	ProposalClosed        Code = "ERR_PROPOSAL_CLOSED"
+	DuplicateVote         Code = "ERR_DUPLICATE_VOTE"
+	NotReady              Code = "ERR_PROPOSAL_NOT_READY"
+	Stale                 Code = "ERR_STALE_EXECUTION"
+	AlreadyExecuted       Code = "ERR_ALREADY_EXECUTED"
 )
 
 // Receipt contains only deterministic values derived from the input state and
 // transaction. Local time, randomness, process details, and error strings are
 // deliberately excluded.
 type Receipt struct {
-	TxID      TxID            `cbor:"1,keyasint"`
-	Type      TransactionType `cbor:"2,keyasint"`
-	Code      Code            `cbor:"3,keyasint"`
-	StateHash StateHash       `cbor:"4,keyasint"`
+	TxID             TxID                         `cbor:"1,keyasint"`
+	Type             TransactionType              `cbor:"2,keyasint"`
+	Code             Code                         `cbor:"3,keyasint"`
+	StateHash        StateHash                    `cbor:"4,keyasint"`
+	ValidatorUpdates []governance.ValidatorUpdate `cbor:"5,keyasint,omitempty"`
 }
 
 type StateHash struct{ protocol.HashDigest }
@@ -129,6 +151,7 @@ type State struct {
 	ProtocolVersion protocol.ProtocolVersion
 	Identities      map[string]StoredIdentity
 	Memberships     map[string]membership.Status
+	Governance      *governance.State
 }
 
 func Genesis(network protocol.NetworkID) State {
@@ -148,6 +171,7 @@ type Snapshot struct {
 	ProtocolVersion protocol.ProtocolVersion `cbor:"3,keyasint"`
 	Identities      []SnapshotIdentity       `cbor:"4,keyasint"`
 	Memberships     []SnapshotMember         `cbor:"5,keyasint"`
+	Governance      *governance.Snapshot     `cbor:"6,keyasint,omitempty"`
 }
 
 type SnapshotIdentity struct {
@@ -169,8 +193,14 @@ type SnapshotMember struct {
 }
 
 func (s State) Snapshot() (Snapshot, error) {
-	if s.SchemaVersion != StateSchema {
+	if s.SchemaVersion != StateSchemaV1 && s.SchemaVersion != StateSchemaV2 {
 		return Snapshot{}, fmt.Errorf("unsupported state schema %d", s.SchemaVersion)
+	}
+	if s.SchemaVersion == StateSchemaV1 && s.Governance != nil {
+		return Snapshot{}, fmt.Errorf("governance state requires state schema v2")
+	}
+	if s.SchemaVersion == StateSchemaV2 && s.Governance == nil {
+		return Snapshot{}, fmt.Errorf("state schema v2 requires governance state")
 	}
 	if s.NetworkID == "" {
 		return Snapshot{}, fmt.Errorf("empty state network")
@@ -255,6 +285,18 @@ func (s State) Snapshot() (Snapshot, error) {
 	if len(s.Memberships) != len(s.Identities) {
 		return Snapshot{}, fmt.Errorf("membership set differs from identity set")
 	}
+	if s.Governance != nil {
+		governanceSnapshot, err := s.Governance.Snapshot()
+		if err != nil {
+			return Snapshot{}, fmt.Errorf("governance snapshot: %w", err)
+		}
+		for _, validator := range governanceSnapshot.Validators {
+			if _, exists := s.Identities[validator.Operator.String()]; !exists {
+				return Snapshot{}, fmt.Errorf("validator operator identity not found")
+			}
+		}
+		result.Governance = &governanceSnapshot
+	}
 
 	return result, nil
 }
@@ -282,6 +324,10 @@ func cloneState(s State) State {
 		ProtocolVersion: s.ProtocolVersion,
 		Identities:      make(map[string]StoredIdentity, len(s.Identities)),
 		Memberships:     make(map[string]membership.Status, len(s.Memberships)),
+	}
+	if s.Governance != nil {
+		governanceCopy := s.Governance.Clone()
+		cloned.Governance = &governanceCopy
 	}
 	for id, stored := range s.Identities {
 		copyOfStored := StoredIdentity{
@@ -329,6 +375,17 @@ func cloneKeyID(id identity.KeyID) identity.KeyID {
 // Apply evaluates exactly one transaction. It never reorders transactions and
 // publishes the copy-on-write state only after every check succeeds.
 func Apply(s State, tx Transaction) (State, Receipt, error) {
+	return ApplyWithContext(s, tx, ExecutionContext{})
+}
+
+// ExecutionContext contains only consensus-derived inputs. Height zero is
+// retained for backward-compatible Phase 4 transactions and is rejected by
+// governance transactions.
+type ExecutionContext struct {
+	Height int64
+}
+
+func ApplyWithContext(s State, tx Transaction, context ExecutionContext) (State, Receipt, error) {
 	canonical, err := tx.CanonicalBytes()
 	if err != nil {
 		return reject(s, TxID{}, tx.Type, Invalid, "canonical transaction", err)
@@ -347,7 +404,7 @@ func Apply(s State, tx Transaction) (State, Receipt, error) {
 	next := cloneState(s)
 	switch tx.Type {
 	case IdentityCreate:
-		if tx.IdentityCreate == nil || tx.KeyRotation != nil {
+		if tx.IdentityCreate == nil || transactionPayloadCount(tx) != 1 {
 			return reject(s, txID, tx.Type, Invalid, "invalid identity-create payload", nil)
 		}
 		proof := *tx.IdentityCreate
@@ -369,7 +426,7 @@ func Apply(s State, tx Transaction) (State, Receipt, error) {
 		next.Memberships[identityID] = membership.Pending
 
 	case KeyRotation:
-		if tx.KeyRotation == nil || tx.IdentityCreate != nil {
+		if tx.KeyRotation == nil || transactionPayloadCount(tx) != 1 {
 			return reject(s, txID, tx.Type, Invalid, "invalid key-rotation payload", nil)
 		}
 		proof := *tx.KeyRotation
@@ -408,6 +465,12 @@ func Apply(s State, tx Transaction) (State, Receipt, error) {
 	case MembershipChange:
 		return reject(s, txID, tx.Type, Unsupported, "membership governance authorization is deferred", nil)
 
+	case GovernanceProposal, GovernanceVote, GovernanceFinalize, GovernanceExecute:
+		return applyGovernance(s, next, tx, txID, context)
+
+	case ValidatorSetChange:
+		return reject(s, txID, tx.Type, Unsupported, "direct validator-set changes require governance", nil)
+
 	default:
 		return reject(s, txID, tx.Type, Unsupported, "unsupported transaction type", nil)
 	}
@@ -417,6 +480,29 @@ func Apply(s State, tx Transaction) (State, Receipt, error) {
 		return reject(s, txID, tx.Type, Invalid, "invalid resulting state", err)
 	}
 	return next, Receipt{TxID: txID, Type: tx.Type, Code: OK, StateHash: stateHash}, nil
+}
+
+func transactionPayloadCount(tx Transaction) int {
+	count := 0
+	if tx.IdentityCreate != nil {
+		count++
+	}
+	if tx.KeyRotation != nil {
+		count++
+	}
+	if tx.GovernanceProposal != nil {
+		count++
+	}
+	if tx.GovernanceVote != nil {
+		count++
+	}
+	if tx.GovernanceFinalize != nil {
+		count++
+	}
+	if tx.GovernanceExecute != nil {
+		count++
+	}
+	return count
 }
 
 func reject(s State, txID TxID, txType TransactionType, code Code, message string, cause error) (State, Receipt, error) {

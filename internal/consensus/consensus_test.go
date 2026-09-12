@@ -13,6 +13,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/kokora3/zion/internal/chain"
+	"github.com/kokora3/zion/internal/governance"
 	"github.com/kokora3/zion/internal/identity"
 	"github.com/kokora3/zion/internal/membership"
 	"github.com/kokora3/zion/internal/protocol"
@@ -31,6 +32,25 @@ func fixtureBytes(t testing.TB, name string) []byte {
 		t.Fatal(err)
 	}
 	var fixture chainFixture
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := hex.DecodeString(fixture.Canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decoded
+}
+
+func governanceFixtureBytes(t testing.TB, name string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile("../governance/testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		Canonical string `json:"canonical_cbor_hex"`
+	}
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
@@ -344,11 +364,89 @@ func TestInitChainRejectsWrongBinding(t *testing.T) {
 	}
 }
 
+func TestGovernanceCheckTxNonMutationAndFinalizeRevalidation(t *testing.T) {
+	validators, _ := testValidators()
+	fixture := governanceIntegrationState(t, validators)
+	genesis, err := NewGenesisWithState(protocol.Alpha1NetworkID, validators, fixture.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApplication(genesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := governance.ProposalBody{SchemaVersion: governance.Schema, NetworkID: protocol.Alpha1NetworkID,
+		Kind: governance.MembershipChange, Proposer: fixture.members[0].IdentityID, CreatedAt: 100,
+		Membership: &governance.MembershipChangePayload{Target: fixture.members[3].IdentityID,
+			Expected: membership.Pending, Requested: membership.Active}}
+	proposal := governanceProposalTx(t, body, fixture.memberKeys[0])
+	proposalRaw, _ := proposal.CanonicalBytes()
+	ctx := context.Background()
+	before, _ := app.Status()
+	checked, err := app.CheckTx(ctx, &abci.CheckTxRequest{Tx: proposalRaw})
+	if err != nil || checked.Code != CodeOK {
+		t.Fatalf("governance proposal CheckTx=%+v err=%v", checked, err)
+	}
+	afterCheck, _ := app.Status()
+	if !bytes.Equal(before.AppHash, afterCheck.AppHash) || !reflect.DeepEqual(before.Snapshot, afterCheck.Snapshot) {
+		t.Fatal("governance proposal CheckTx mutated state")
+	}
+	finalized, err := app.FinalizeBlock(ctx, &abci.FinalizeBlockRequest{Height: 1, Txs: [][]byte{proposalRaw}})
+	if err != nil || finalized.TxResults[0].Code != CodeOK {
+		t.Fatalf("proposal finalization=%+v err=%v", finalized, err)
+	}
+	if _, err := app.Commit(ctx, &abci.CommitRequest{}); err != nil {
+		t.Fatal(err)
+	}
+
+	proposalID := proposal.GovernanceProposal.ProposalID
+	first := governanceVoteTx(t, proposalID, fixture.members[0].IdentityID, fixture.memberKeys[0])
+	secondAuthorization, err := governance.CreateVote(governance.VoteBody{SchemaVersion: governance.Schema,
+		NetworkID: protocol.Alpha1NetworkID, ProposalID: proposalID, Voter: fixture.members[0].IdentityID, Choice: governance.No}, fixture.memberKeys[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := chain.Transaction{SchemaVersion: chain.TransactionSchema, NetworkID: protocol.Alpha1NetworkID,
+		Type: chain.GovernanceVote, GovernanceVote: &secondAuthorization}
+	firstRaw, _ := first.CanonicalBytes()
+	secondRaw, _ := second.CanonicalBytes()
+	beforeVotes, _ := app.Status()
+	for _, raw := range [][]byte{firstRaw, secondRaw} {
+		response, err := app.CheckTx(ctx, &abci.CheckTxRequest{Tx: raw})
+		if err != nil || response.Code != CodeOK {
+			t.Fatalf("individually plausible vote CheckTx=%+v err=%v", response, err)
+		}
+	}
+	afterVotes, _ := app.Status()
+	if !bytes.Equal(beforeVotes.AppHash, afterVotes.AppHash) || !reflect.DeepEqual(beforeVotes.Snapshot, afterVotes.Snapshot) {
+		t.Fatal("governance vote CheckTx mutated state")
+	}
+	processed, err := app.ProcessProposal(ctx, &abci.ProcessProposalRequest{Height: 2, Txs: [][]byte{firstRaw, secondRaw}})
+	if err != nil || processed.Status != abci.PROCESS_PROPOSAL_STATUS_REJECT {
+		t.Fatalf("duplicate-vote block was not rejected: %+v %v", processed, err)
+	}
+	finalized, err = app.FinalizeBlock(ctx, &abci.FinalizeBlockRequest{Height: 2, Txs: [][]byte{firstRaw, secondRaw}})
+	if err != nil || len(finalized.TxResults) != 2 || finalized.TxResults[0].Code != CodeOK || finalized.TxResults[1].Code != CodeRejected {
+		t.Fatalf("ordered governance revalidation=%+v err=%v", finalized, err)
+	}
+	if _, err := app.Commit(ctx, &abci.CommitRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	status, _ := app.Status()
+	record, ok := proposalSnapshot(status.Snapshot, proposalID)
+	if !ok || len(record.Votes) != 1 || record.Votes[0].Choice != governance.Yes {
+		t.Fatal("duplicate finalized vote changed canonical original vote")
+	}
+}
+
 func FuzzDecodeTransaction(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0xff})
 	f.Add(fixtureBytes(f, "identity_create_golden.json"))
 	f.Add(fixtureBytes(f, "key_rotation_golden.json"))
+	f.Add(governanceFixtureBytes(f, "governance_proposal_golden.json"))
+	f.Add(governanceFixtureBytes(f, "governance_vote_golden.json"))
+	f.Add(governanceFixtureBytes(f, "governance_finalize_golden.json"))
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		_, _ = DecodeTransaction(raw, protocol.Alpha1NetworkID)
 	})

@@ -1,4 +1,4 @@
-// Package governance will implement one-member-one-vote alpha governance,
-// proposal lifecycles, voter eligibility, and thresholds. It is deferred in
-// Phase 1.
+// Package governance defines ZION's canonical one-active-member-one-vote
+// authorization objects and deterministic governance state. Consensus orders
+// these objects; it does not decide their policy outcome.
 package governance

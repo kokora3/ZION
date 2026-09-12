@@ -66,15 +66,54 @@ func DecodeTransaction(raw []byte, network protocol.NetworkID) (chain.Transactio
 	}
 	switch tx.Type {
 	case chain.IdentityCreate:
-		if tx.IdentityCreate == nil || tx.KeyRotation != nil {
+		if tx.IdentityCreate == nil || consensusPayloadCount(tx) != 1 {
 			return chain.Transaction{}, &DecodeError{Kind: DecodeMalformed}
 		}
 	case chain.KeyRotation:
-		if tx.KeyRotation == nil || tx.IdentityCreate != nil {
+		if tx.KeyRotation == nil || consensusPayloadCount(tx) != 1 {
+			return chain.Transaction{}, &DecodeError{Kind: DecodeMalformed}
+		}
+	case chain.GovernanceProposal:
+		if tx.GovernanceProposal == nil || consensusPayloadCount(tx) != 1 {
+			return chain.Transaction{}, &DecodeError{Kind: DecodeMalformed}
+		}
+	case chain.GovernanceVote:
+		if tx.GovernanceVote == nil || consensusPayloadCount(tx) != 1 {
+			return chain.Transaction{}, &DecodeError{Kind: DecodeMalformed}
+		}
+	case chain.GovernanceFinalize:
+		if tx.GovernanceFinalize == nil || consensusPayloadCount(tx) != 1 {
+			return chain.Transaction{}, &DecodeError{Kind: DecodeMalformed}
+		}
+	case chain.GovernanceExecute:
+		if tx.GovernanceExecute == nil || consensusPayloadCount(tx) != 1 {
 			return chain.Transaction{}, &DecodeError{Kind: DecodeMalformed}
 		}
 	default:
 		return chain.Transaction{}, &DecodeError{Kind: DecodeType}
 	}
 	return tx, nil
+}
+
+func consensusPayloadCount(tx chain.Transaction) int {
+	count := 0
+	if tx.IdentityCreate != nil {
+		count++
+	}
+	if tx.KeyRotation != nil {
+		count++
+	}
+	if tx.GovernanceProposal != nil {
+		count++
+	}
+	if tx.GovernanceVote != nil {
+		count++
+	}
+	if tx.GovernanceFinalize != nil {
+		count++
+	}
+	if tx.GovernanceExecute != nil {
+		count++
+	}
+	return count
 }

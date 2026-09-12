@@ -12,6 +12,7 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/kokora3/zion/internal/chain"
+	"github.com/kokora3/zion/internal/governance"
 )
 
 const (
@@ -47,7 +48,7 @@ type Application struct {
 }
 
 func NewApplication(genesis Genesis) (*Application, error) {
-	state := chain.Genesis(genesis.NetworkID)
+	state := genesis.InitialState
 	hash, err := state.Hash()
 	if err != nil {
 		return nil, err
@@ -122,7 +123,7 @@ func decodeAppGenesis(raw []byte) (appGenesis, error) {
 func (app *Application) CheckTx(_ context.Context, req *abci.CheckTxRequest) (*abci.CheckTxResponse, error) {
 	app.mu.RLock()
 	defer app.mu.RUnlock()
-	_, _, code, data := app.evaluate(app.committed, req.Tx)
+	_, _, code, data, _ := app.evaluate(app.committed, req.Tx, app.height+1)
 	return &abci.CheckTxResponse{Code: code, Data: data, Codespace: codespace(code),
 		GasWanted: int64(len(req.Tx)), GasUsed: int64(len(req.Tx))}, nil
 }
@@ -137,7 +138,7 @@ func (app *Application) PrepareProposal(_ context.Context, req *abci.PrepareProp
 		if req.MaxTxBytes >= 0 && total+int64(len(raw)) > req.MaxTxBytes {
 			continue
 		}
-		next, err, code, _ := app.evaluate(working, raw)
+		next, err, code, _, _ := app.evaluate(working, raw, req.Height)
 		if err != nil || code != CodeOK {
 			continue
 		}
@@ -153,7 +154,7 @@ func (app *Application) ProcessProposal(_ context.Context, req *abci.ProcessProp
 	defer app.mu.RUnlock()
 	working := app.committed
 	for _, raw := range req.Txs {
-		next, err, code, _ := app.evaluate(working, raw)
+		next, err, code, _, _ := app.evaluate(working, raw, req.Height)
 		if err != nil || code != CodeOK {
 			return &abci.ProcessProposalResponse{Status: abci.PROCESS_PROPOSAL_STATUS_REJECT}, nil
 		}
@@ -173,12 +174,18 @@ func (app *Application) FinalizeBlock(_ context.Context, req *abci.FinalizeBlock
 	}
 	working := app.committed
 	results := make([]*abci.ExecTxResult, 0, len(req.Txs))
+	validatorUpdates := make([]abci.ValidatorUpdate, 0)
 	for _, raw := range req.Txs {
-		next, _, code, data := app.evaluate(working, raw)
+		next, _, code, data, updates := app.evaluate(working, raw, req.Height)
 		results = append(results, &abci.ExecTxResult{Code: code, Data: data, Codespace: codespace(code),
 			GasWanted: int64(len(raw)), GasUsed: int64(len(raw))})
 		if code == CodeOK {
 			working = next
+			for _, update := range updates {
+				validatorUpdates = append(validatorUpdates, abci.ValidatorUpdate{
+					Power: update.Power, PubKeyBytes: append([]byte(nil), update.PublicKey...), PubKeyType: "ed25519",
+				})
+			}
 		}
 	}
 	hash, err := working.Hash()
@@ -186,7 +193,8 @@ func (app *Application) FinalizeBlock(_ context.Context, req *abci.FinalizeBlock
 		return nil, fmt.Errorf("application invariant: resulting state: %w", err)
 	}
 	app.pending = &pendingBlock{height: req.Height, state: working}
-	return &abci.FinalizeBlockResponse{TxResults: results, AppHash: append([]byte(nil), hash.Digest...)}, nil
+	return &abci.FinalizeBlockResponse{TxResults: results, AppHash: append([]byte(nil), hash.Digest...),
+		ValidatorUpdates: validatorUpdates}, nil
 }
 
 func (app *Application) Commit(context.Context, *abci.CommitRequest) (*abci.CommitResponse, error) {
@@ -216,16 +224,16 @@ func (app *Application) Status() (Status, error) {
 		Pending: app.pending != nil}, nil
 }
 
-func (app *Application) evaluate(state chain.State, raw []byte) (chain.State, error, uint32, []byte) {
+func (app *Application) evaluate(state chain.State, raw []byte, height int64) (chain.State, error, uint32, []byte, []governance.ValidatorUpdate) {
 	tx, err := DecodeTransaction(raw, app.genesis.NetworkID)
 	if err != nil {
-		return state, err, CodeMalformed, []byte(decodeKind(err))
+		return state, err, CodeMalformed, []byte(decodeKind(err)), nil
 	}
-	next, receipt, err := chain.Apply(state, tx)
+	next, receipt, err := chain.ApplyWithContext(state, tx, chain.ExecutionContext{Height: height})
 	if err != nil {
-		return state, err, CodeRejected, []byte(receipt.Code)
+		return state, err, CodeRejected, []byte(receipt.Code), nil
 	}
-	return next, nil, CodeOK, []byte(receipt.Code)
+	return next, nil, CodeOK, []byte(receipt.Code), receipt.ValidatorUpdates
 }
 
 func decodeKind(err error) DecodeErrorKind {

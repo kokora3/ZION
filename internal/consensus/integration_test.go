@@ -3,6 +3,7 @@ package consensus
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"net"
 	"os"
@@ -20,6 +21,8 @@ import (
 	"github.com/cometbft/cometbft/proxy"
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/kokora3/zion/internal/chain"
+	"github.com/kokora3/zion/internal/governance"
+	"github.com/kokora3/zion/internal/identity"
 	"github.com/kokora3/zion/internal/membership"
 	"github.com/kokora3/zion/internal/protocol"
 )
@@ -66,7 +69,12 @@ func newLocalNetwork(t testing.TB) *localNetwork {
 	if err != nil {
 		t.Fatal(err)
 	}
-	network := &localNetwork{genesis: genesis, nodes: make([]*localValidator, DefaultValidatorCount)}
+	return newLocalNetworkWithGenesis(t, genesis, validatorKeys, false)
+}
+
+func newLocalNetworkWithGenesis(t testing.TB, genesis Genesis, validatorKeys []cmted25519.PrivKey, emptyBlocks bool) *localNetwork {
+	t.Helper()
+	network := &localNetwork{genesis: genesis, nodes: make([]*localValidator, len(validatorKeys))}
 	for i := range network.nodes {
 		root := filepath.Join(t.TempDir(), fmt.Sprintf("validator-%d", i))
 		app, err := NewApplication(genesis)
@@ -91,7 +99,10 @@ func newLocalNetwork(t testing.TB) *localNetwork {
 		cfg.P2P.AllowDuplicateIP = true
 		cfg.P2P.PexReactor = false
 		cfg.P2P.PersistentPeersMaxDialPeriod = 100 * time.Millisecond
-		cfg.Consensus.CreateEmptyBlocks = false
+		cfg.Consensus.CreateEmptyBlocks = emptyBlocks
+		if emptyBlocks {
+			cfg.Consensus.CreateEmptyBlocksInterval = 50 * time.Millisecond
+		}
 		cfg.Consensus.TimeoutPropose = 150 * time.Millisecond
 		cfg.Consensus.TimeoutProposeDelta = 20 * time.Millisecond
 		cfg.Consensus.TimeoutPrevote = 50 * time.Millisecond
@@ -238,6 +249,16 @@ func requireConverged(t testing.TB, statuses []Status) {
 		if statuses[i].Height != statuses[0].Height || !bytes.Equal(statuses[i].AppHash, statuses[0].AppHash) ||
 			!bytes.Equal(mustSnapshotBytes(t, statuses[i].Snapshot), mustSnapshotBytes(t, statuses[0].Snapshot)) {
 			t.Fatalf("validator %d did not converge", i)
+		}
+	}
+}
+
+func requireStateConverged(t testing.TB, statuses []Status) {
+	t.Helper()
+	for i := 1; i < len(statuses); i++ {
+		if !bytes.Equal(statuses[i].AppHash, statuses[0].AppHash) ||
+			!bytes.Equal(mustSnapshotBytes(t, statuses[i].Snapshot), mustSnapshotBytes(t, statuses[0].Snapshot)) {
+			t.Fatalf("validator %d did not converge on application state", i)
 		}
 	}
 }
@@ -431,4 +452,293 @@ func TestFourValidatorCometBFTFinalityAndFaults(t *testing.T) {
 	if wrong.node.Switch().Peers().Size() != 0 {
 		t.Fatal("wrong-network validator silently joined the consensus network")
 	}
+}
+
+type governanceIntegration struct {
+	state      chain.State
+	memberKeys []ed25519.PrivateKey
+	members    []identity.IdentityGenesisProof
+	validators []governance.Validator
+}
+
+func governanceIntegrationState(t testing.TB, consensusValidators []Validator) governanceIntegration {
+	t.Helper()
+	fixture := governanceIntegration{state: chain.Genesis(protocol.Alpha1NetworkID)}
+	for i, start := range []byte{0, 32, 64, 96} {
+		tx, proof := makeIdentityTx(t, start, protocol.ProtocolTimestamp(i+1))
+		var err error
+		fixture.state, _, err = chain.Apply(fixture.state, tx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixture.memberKeys = append(fixture.memberKeys, deterministicMemberKey(start))
+		fixture.members = append(fixture.members, proof)
+	}
+	for i, validator := range consensusValidators {
+		fixture.validators = append(fixture.validators, governance.Validator{Operator: fixture.members[i%3].IdentityID,
+			PublicKey: append([]byte(nil), validator.PublicKey...), Power: governance.ValidatorPower})
+	}
+	var err error
+	fixture.state, err = chain.BootstrapGovernance(fixture.state,
+		[]identity.IdentityID{fixture.members[0].IdentityID, fixture.members[1].IdentityID, fixture.members[2].IdentityID}, fixture.validators)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fixture
+}
+
+func governanceProposalTx(t testing.TB, body governance.ProposalBody, key ed25519.PrivateKey) chain.Transaction {
+	t.Helper()
+	authorization, err := governance.CreateProposal(body, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return chain.Transaction{SchemaVersion: chain.TransactionSchema, NetworkID: protocol.Alpha1NetworkID,
+		Type: chain.GovernanceProposal, GovernanceProposal: &authorization}
+}
+
+func governanceVoteTx(t testing.TB, proposalID governance.ProposalID, voter identity.IdentityID, key ed25519.PrivateKey) chain.Transaction {
+	t.Helper()
+	authorization, err := governance.CreateVote(governance.VoteBody{SchemaVersion: governance.Schema, NetworkID: protocol.Alpha1NetworkID,
+		ProposalID: proposalID, Voter: voter, Choice: governance.Yes}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return chain.Transaction{SchemaVersion: chain.TransactionSchema, NetworkID: protocol.Alpha1NetworkID,
+		Type: chain.GovernanceVote, GovernanceVote: &authorization}
+}
+
+func governanceActionTx(t testing.TB, transactionType chain.TransactionType, proposalID governance.ProposalID,
+	submitter identity.IdentityID, key ed25519.PrivateKey) chain.Transaction {
+	t.Helper()
+	body := governance.ActionBody{SchemaVersion: governance.Schema, NetworkID: protocol.Alpha1NetworkID,
+		ProposalID: proposalID, Submitter: submitter}
+	var authorization governance.ActionAuthorization
+	var err error
+	if transactionType == chain.GovernanceFinalize {
+		authorization, err = governance.CreateFinalize(body, key)
+	} else {
+		authorization, err = governance.CreateExecute(body, key)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := chain.Transaction{SchemaVersion: chain.TransactionSchema, NetworkID: protocol.Alpha1NetworkID, Type: transactionType}
+	if transactionType == chain.GovernanceFinalize {
+		tx.GovernanceFinalize = &authorization
+	} else {
+		tx.GovernanceExecute = &authorization
+	}
+	return tx
+}
+
+func submitChainTx(t testing.TB, network *localNetwork, nodeIndex int, tx chain.Transaction) []byte {
+	t.Helper()
+	raw, err := tx.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	network.submit(t, nodeIndex, raw)
+	return raw
+}
+
+func proposalSnapshot(snapshot chain.Snapshot, proposalID governance.ProposalID) (governance.ProposalSnapshot, bool) {
+	if snapshot.Governance == nil {
+		return governance.ProposalSnapshot{}, false
+	}
+	for _, proposal := range snapshot.Governance.Proposals {
+		if proposal.ID.String() == proposalID.String() {
+			return proposal, true
+		}
+	}
+	return governance.ProposalSnapshot{}, false
+}
+
+func waitProposal(t testing.TB, network *localNetwork, proposalID governance.ProposalID, indexes []int,
+	predicate func(governance.ProposalSnapshot) bool) []Status {
+	t.Helper()
+	return network.waitState(t, indexes, func(status Status) bool {
+		proposal, ok := proposalSnapshot(status.Snapshot, proposalID)
+		return ok && predicate(proposal)
+	})
+}
+
+func approveProposal(t testing.TB, network *localNetwork, proposal chain.Transaction, fixture governanceIntegration, indexes []int) ([]Status, []byte) {
+	t.Helper()
+	proposalID := proposal.GovernanceProposal.ProposalID
+	submitChainTx(t, network, 0, proposal)
+	statuses := waitProposal(t, network, proposalID, indexes, func(proposal governance.ProposalSnapshot) bool { return proposal.Status == governance.Open })
+	opened, _ := proposalSnapshot(statuses[0].Snapshot, proposalID)
+	for i := 0; i < 3; i++ {
+		submitChainTx(t, network, i, governanceVoteTx(t, proposalID, fixture.members[i].IdentityID, fixture.memberKeys[i]))
+	}
+	waitProposal(t, network, proposalID, indexes, func(proposal governance.ProposalSnapshot) bool { return len(proposal.Votes) == 3 })
+	network.waitHeight(t, opened.EndHeight, indexes...)
+	finalize := governanceActionTx(t, chain.GovernanceFinalize, proposalID, fixture.members[0].IdentityID, fixture.memberKeys[0])
+	submitChainTx(t, network, 0, finalize)
+	statuses = waitProposal(t, network, proposalID, indexes, func(proposal governance.ProposalSnapshot) bool { return proposal.Status == governance.Approved })
+	requireStateConverged(t, statuses)
+	execute := governanceActionTx(t, chain.GovernanceExecute, proposalID, fixture.members[0].IdentityID, fixture.memberKeys[0])
+	raw := submitChainTx(t, network, 0, execute)
+	statuses = waitProposal(t, network, proposalID, indexes, func(proposal governance.ProposalSnapshot) bool { return proposal.Status == governance.Executed })
+	requireStateConverged(t, statuses)
+	return statuses, raw
+}
+
+func transactionHeight(t testing.TB, network *localNetwork, raw []byte, maximum int64) int64 {
+	t.Helper()
+	for height := int64(1); height <= maximum; height++ {
+		block, _ := network.nodes[0].node.BlockStore().LoadBlock(height)
+		if block == nil {
+			continue
+		}
+		for _, transaction := range block.Data.Txs {
+			if bytes.Equal(transaction, raw) {
+				return height
+			}
+		}
+	}
+	t.Fatal("committed transaction height not found")
+	return 0
+}
+
+func requireEngineValidatorSet(t testing.TB, validator *localValidator, height int64, expected ...[]byte) {
+	t.Helper()
+	environment, err := validator.node.ConfigureRPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := environment.Validators(nil, &height, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != len(expected) {
+		t.Fatalf("engine validator count=%d, want %d at height %d", result.Total, len(expected), height)
+	}
+	for _, publicKey := range expected {
+		found := false
+		for _, validator := range result.Validators {
+			if bytes.Equal(validator.PubKey.Bytes(), publicKey) && validator.VotingPower == governance.ValidatorPower {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("equal-power validator %x missing at height %d", publicKey, height)
+		}
+	}
+}
+
+func TestGovernanceThroughCometBFTAndValidatorSetChanges(t *testing.T) {
+	if testing.Short() {
+		t.Skip("governance validator-set loopback integration test")
+	}
+	consensusValidators, consensusKeys := testValidators()
+	fixture := governanceIntegrationState(t, consensusValidators)
+	genesis, err := NewGenesisWithState(protocol.Alpha1NetworkID, consensusValidators, fixture.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validatorEKey := cmted25519.GenPrivKeyFromSecret([]byte(testKeyNotice + "E"))
+	network := newLocalNetworkWithGenesis(t, genesis, append(consensusKeys, validatorEKey), true)
+	network.start(t, 0, 1, 2, 3)
+	active := []int{0, 1, 2, 3}
+
+	membershipBody := governance.ProposalBody{SchemaVersion: governance.Schema, NetworkID: protocol.Alpha1NetworkID,
+		Kind: governance.MembershipChange, Proposer: fixture.members[0].IdentityID, CreatedAt: 100,
+		Membership: &governance.MembershipChangePayload{Target: fixture.members[3].IdentityID,
+			Expected: membership.Pending, Requested: membership.Active}}
+	membershipProposal := governanceProposalTx(t, membershipBody, fixture.memberKeys[0])
+	statuses, _ := approveProposal(t, network, membershipProposal, fixture, active)
+	if memberStatus(statuses[0].Snapshot, fixture.members[3].IdentityID) != membership.Active {
+		t.Fatal("four-validator governance execution did not activate Dave")
+	}
+
+	setHash, err := fixture.state.Governance.ValidatorSetHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	validatorE := governance.Validator{Operator: fixture.members[3].IdentityID,
+		PublicKey: append([]byte(nil), validatorEKey.PubKey().Bytes()...), Power: governance.ValidatorPower}
+	addBody := governance.ProposalBody{SchemaVersion: governance.Schema, NetworkID: protocol.Alpha1NetworkID,
+		Kind: governance.ValidatorSetChange, Proposer: fixture.members[0].IdentityID, CreatedAt: 200,
+		ValidatorSet: &governance.ValidatorSetChangePayload{Action: governance.AddValidator, Validator: validatorE, ExpectedSetHash: setHash}}
+	addProposal := governanceProposalTx(t, addBody, fixture.memberKeys[0])
+	statuses, addRaw := approveProposal(t, network, addProposal, fixture, active)
+	addHeight := transactionHeight(t, network, addRaw, statuses[0].Height)
+	network.waitHeight(t, addHeight+2, active...)
+
+	// E starts from the original four-validator genesis, block-syncs every
+	// governance decision, and becomes effective under CometBFT's H+2 rule.
+	network.start(t, 4)
+	activeWithE := []int{0, 1, 2, 3, 4}
+	statuses = network.waitHeight(t, addHeight+3, activeWithE...)
+	requireStateConverged(t, statuses)
+	expectedAfterAdd := make([][]byte, 0, 5)
+	for _, validator := range consensusValidators {
+		expectedAfterAdd = append(expectedAfterAdd, validator.PublicKey)
+	}
+	expectedAfterAdd = append(expectedAfterAdd, validatorE.PublicKey)
+	requireEngineValidatorSet(t, network.nodes[0], addHeight+2, expectedAfterAdd...)
+	active = activeWithE
+	proofTx, _ := makeIdentityTx(t, 128, 300)
+	submitChainTx(t, network, 4, proofTx)
+	statuses = network.waitState(t, active, func(status Status) bool { return len(status.Snapshot.Identities) == 5 })
+	requireStateConverged(t, statuses)
+
+	setHashAfterAdd := validatorSetHashFromSnapshot(t, statuses[0].Snapshot)
+	removeBody := governance.ProposalBody{SchemaVersion: governance.Schema, NetworkID: protocol.Alpha1NetworkID,
+		Kind: governance.ValidatorSetChange, Proposer: fixture.members[1].IdentityID, CreatedAt: 201,
+		ValidatorSet: &governance.ValidatorSetChangePayload{Action: governance.RemoveValidator,
+			Validator: fixture.validators[3], ExpectedSetHash: setHashAfterAdd}}
+	removeProposal := governanceProposalTx(t, removeBody, fixture.memberKeys[1])
+	statuses, removeRaw := approveProposal(t, network, removeProposal, fixture, active)
+	removeHeight := transactionHeight(t, network, removeRaw, statuses[0].Height)
+	network.waitHeight(t, removeHeight+2, active...)
+
+	expectedAfterRemove := make([][]byte, 0, 4)
+	for i := 0; i < 3; i++ {
+		expectedAfterRemove = append(expectedAfterRemove, consensusValidators[i].PublicKey)
+	}
+	expectedAfterRemove = append(expectedAfterRemove, validatorE.PublicKey)
+	requireEngineValidatorSet(t, network.nodes[0], removeHeight+2, expectedAfterRemove...)
+	// D remains connected as a non-validator full node. The engine-derived
+	// four-validator set continues finalizing and all five applications converge.
+	proofTx, _ = makeIdentityTx(t, 160, 301)
+	submitChainTx(t, network, 4, proofTx)
+	statuses = network.waitState(t, active, func(status Status) bool { return len(status.Snapshot.Identities) == 6 })
+	requireStateConverged(t, statuses)
+	if statuses[0].Snapshot.Governance == nil || len(statuses[0].Snapshot.Governance.Validators) != 4 {
+		t.Fatal("canonical validator set did not converge to four equal-power validators")
+	}
+	for _, validator := range statuses[0].Snapshot.Governance.Validators {
+		if validator.Power != governance.ValidatorPower {
+			t.Fatal("validator power changed from one")
+		}
+	}
+}
+
+func memberStatus(snapshot chain.Snapshot, memberID identity.IdentityID) membership.Status {
+	for _, member := range snapshot.Memberships {
+		if member.ID.String() == memberID.String() {
+			return member.Status
+		}
+	}
+	return ""
+}
+
+func validatorSetHashFromSnapshot(t testing.TB, snapshot chain.Snapshot) protocol.HashDigest {
+	t.Helper()
+	if snapshot.Governance == nil {
+		t.Fatal("missing governance snapshot")
+	}
+	state, err := governance.NewState(snapshot.Governance.Validators)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := state.ValidatorSetHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hash
 }
