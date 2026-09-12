@@ -47,3 +47,15 @@ Execution revalidates current canonical state. Stale membership or validator-set
 CheckTx never mutates proposal, vote, membership, or validator state; finalized ordered execution performs authorization again. Chain height, not wall clock, determines voting and finalization boundaries. Local time, filesystem state, APIs, randomness, and scheduling are not governance inputs.
 
 Phase 6 bounds canonical transactions at the existing 65,536-byte protocol limit, proposal payloads at 4,096 canonical bytes, and electorates/votes at 1,024 per proposal. Finalized proposal history remains canonical and is not pruned in this phase. These controls are not a claim of formal verification.
+
+## Phase 7 general-P2P boundaries
+
+The libp2p PeerID is cryptographic transport identity; DNS names, IP addresses, ports, and multiaddrs are locations. A dial address includes the expected PeerID, and the ZION hello's reported PeerID must equal the remote identity authenticated by libp2p. Member, CometBFT validator, and P2P private keys are separate. P2P keys never enter canonical state, and changing them cannot alter IdentityID, membership, governance authority, validator identity, `StateHash`, or `AppHash`.
+
+Bootstrap peers and DNS are replaceable discovery infrastructure, not trust or protocol authority. PEX records are untrusted candidate contact information. Every candidate is independently transport-authenticated and must pass the ZION network, existing genesis fingerprint, typed version, role, address, and canonical-CBOR hello checks. A claimed `VALIDATOR` role is only a capability hint and cannot change the canonical CometBFT validator set; a claimed `BOOTSTRAP` role grants no privilege.
+
+Peer-cache JSON is bounded local operational state. Its timestamps and dial failures never enter transactions or canonical state. A corrupt, oversized, or compromised cache cannot authorize chain changes and fails safely to an empty cache. Private keys, member secrets, validator secrets, credentials, and filesystem metadata are never advertised by hello or PEX.
+
+ZION-owned hello and PEX frames have fixed size, count, nesting, role, PeerID, and multiaddr bounds. Non-canonical or malformed input is rejected without promotion to the usable peer set. Connected peers, concurrent dials, cache records, addresses, retries, and PEX output are bounded; contexts, deadlines, and capped backoff prevent immediate unbounded redial loops. These measures reduce denial-of-service risk but do not provide Sybil resistance.
+
+An outbound-only NORMAL node can participate without public inbound reachability. Phase 7 deliberately does not provide AutoNAT, hole punching, DCUtR, UPnP, NAT-PMP, relay, TURN, or DHT behavior and makes no universal NAT-connectivity or anonymity claim.

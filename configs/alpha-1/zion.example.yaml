@@ -1,10 +1,28 @@
-# Phase 1 template only. It is not parsed by the node yet and contains no secrets.
-# zion-alpha-1 values that are not frozen in SPEC.md remain explicit placeholders.
+# Phase 7 operational example. It contains no private keys and is not canonical state.
 network_id: zion-alpha-1
 data_directory: <set-a-local-data-directory>
-listen_addresses: [] # Configure explicitly; do not copy fake peer endpoints.
-bootstrap_peers: [] # Add verified, replaceable endpoints with peer identities later.
-max_peers: <set-before-use>
+p2p:
+  enabled: true
+  # Separate from the CometBFT validator P2P port.
+  listen_addresses:
+    - /ip4/0.0.0.0/udp/42000/quic-v1
+  # DNS/IP is location; /p2p/<PeerID> is the expected cryptographic identity.
+  bootstrap_addresses:
+    - /dns4/bootstrap-zion.kokora.info/udp/42000/quic-v1/p2p/<verified-bootstrap-peer-id>
+  fallback_addresses: []
+  manual_peers: []
+  peer_key_path: <data-directory>/p2p/peer.key
+  peer_cache_path: <data-directory>/p2p/peers.json
+  roles: [NORMAL] # May also include VALIDATOR and/or BOOTSTRAP as capability hints.
+  max_connected_peers: 64
+  target_outbound_peers: 12
+  max_concurrent_dials: 8
+  max_cached_peers: 256
+  max_addresses_per_peer: 8
+  max_pex_peers_per_response: 32
+cometbft:
+  p2p_listen_address: tcp://0.0.0.0:26656
+max_peers: 64
 max_storage_gb: <set-before-use>
 reserve_free_gb: <set-before-use>
 download_limit_mbps: <set-before-use>

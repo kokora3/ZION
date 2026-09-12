@@ -1,0 +1,15 @@
+{
+  "fixture_notice": "TEST ONLY - PUBLIC FIXTURE - NEVER USE IN PRODUCTION",
+  "schema_version": 1,
+  "protocol_id": "/zion/hello/0.1.0",
+  "network_id": "zion-alpha-1",
+  "network_fingerprint_algorithm": "sha256",
+  "network_fingerprint_hex": "62eaf243b44d62a234d20ce4b18f67d4ddbb271c78c8e9142e7cb3f6f4d1966f",
+  "supported_versions": [
+    {"major": 0, "minor": 1, "patch": 0}
+  ],
+  "roles": ["BOOTSTRAP", "NORMAL"],
+  "authenticated_peer_id": "12D3KooWDYRj2XbWca1E1e6wnV2pG8okMx3cMnigibgkRSWXKpc7",
+  "advertised_addresses": ["/dns4/bootstrap-zion.kokora.info/udp/42000/quic-v1"],
+  "canonical_cbor_hex": "a70101026c7a696f6e2d616c7068612d3103a2016673686132353602582062eaf243b44d62a234d20ce4b18f67d4ddbb271c78c8e9142e7cb3f6f4d1966f0481a3010002010300058269424f4f545354524150664e4f524d414c067834313244334b6f6f574459526a3258625763613145316536776e56327047386f6b4d7833634d6e69676962676b525357584b706337078178322f646e73342f626f6f7473747261702d7a696f6e2e6b6f6b6f72612e696e666f2f7564702f34323030302f717569632d7631"
+}
