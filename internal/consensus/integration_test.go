@@ -111,6 +111,7 @@ func newLocalNetworkWithGenesis(t testing.TB, genesis Genesis, validatorKeys []c
 		cfg.Consensus.TimeoutPrecommitDelta = 10 * time.Millisecond
 		cfg.Consensus.TimeoutCommit = 50 * time.Millisecond
 		cfg.Consensus.SkipTimeoutCommit = false
+		cfg.Consensus.PeerQueryMaj23SleepDuration = 10 * time.Millisecond
 		cfg.TxIndex.Indexer = "null"
 		peers := make([]string, 0, len(network.nodes)-1)
 		for _, peer := range network.nodes {
@@ -192,6 +193,15 @@ func (network *localNetwork) stop(index int) {
 	if validator.node == nil {
 		return
 	}
+	// CometBFT v1.0.1's switch stops consensus reactors asynchronously with
+	// respect to their per-peer gossip routines. Drain the switch while its
+	// block/state stores are still open; otherwise a late queryMaj23 iteration
+	// can race Node.OnStop closing Pebble and panic with "pebble: closed".
+	if validator.node.Switch().IsRunning() {
+		_ = validator.node.Switch().Stop()
+		validator.node.Switch().Wait()
+		time.Sleep(100 * time.Millisecond)
+	}
 	_ = validator.node.Stop()
 	validator.node.Wait()
 	validator.node = nil
@@ -243,14 +253,39 @@ func (network *localNetwork) waitState(t testing.TB, indexes []int, predicate fu
 	return nil
 }
 
-func requireConverged(t testing.TB, statuses []Status) {
+func (network *localNetwork) waitConvergedState(t testing.TB, indexes []int, predicate func(Status) bool) []Status {
 	t.Helper()
-	for i := 1; i < len(statuses); i++ {
-		if statuses[i].Height != statuses[0].Height || !bytes.Equal(statuses[i].AppHash, statuses[0].AppHash) ||
-			!bytes.Equal(mustSnapshotBytes(t, statuses[i].Snapshot), mustSnapshotBytes(t, statuses[0].Snapshot)) {
-			t.Fatalf("validator %d did not converge", i)
+	deadline := time.Now().Add(finalityTimeout)
+	for time.Now().Before(deadline) {
+		statuses := make([]Status, len(indexes))
+		ready := true
+		for i, index := range indexes {
+			status, err := network.nodes[index].app.Status()
+			if err != nil || !predicate(status) {
+				ready = false
+				break
+			}
+			statuses[i] = status
 		}
+		if ready {
+			for i := 1; i < len(statuses); i++ {
+				// Observing live nodes is not an atomic read: one validator may
+				// already expose the next empty/recovery height while all nodes
+				// have the same committed canonical application state.
+				if !bytes.Equal(statuses[i].AppHash, statuses[0].AppHash) ||
+					!bytes.Equal(mustSnapshotBytes(t, statuses[i].Snapshot), mustSnapshotBytes(t, statuses[0].Snapshot)) {
+					ready = false
+					break
+				}
+			}
+		}
+		if ready {
+			return statuses
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
+	t.Fatal("timed out waiting for validator convergence")
+	return nil
 }
 
 func requireStateConverged(t testing.TB, statuses []Status) {
@@ -365,10 +400,9 @@ func TestFourValidatorCometBFTFinalityAndFaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	network.submit(t, 0, create)
-	statuses := network.waitState(t, []int{0, 1, 2, 3}, func(status Status) bool {
+	statuses := network.waitConvergedState(t, []int{0, 1, 2, 3}, func(status Status) bool {
 		return len(status.Snapshot.Identities) == 1
 	})
-	requireConverged(t, statuses)
 	requireExpectedAppHash(t, statuses[0], expected)
 	if len(statuses[0].Snapshot.Identities) != 1 || statuses[0].Snapshot.Memberships[0].Status != membership.Pending {
 		t.Fatalf("IdentityCreate did not finalize correctly: %+v", statuses[0].Snapshot)
@@ -383,10 +417,9 @@ func TestFourValidatorCometBFTFinalityAndFaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	network.submit(t, 1, rotation)
-	statuses = network.waitState(t, []int{0, 1, 2, 3}, func(status Status) bool {
+	statuses = network.waitConvergedState(t, []int{0, 1, 2, 3}, func(status Status) bool {
 		return len(status.Snapshot.Identities) == 1 && status.Snapshot.Identities[0].Sequence == 1
 	})
-	requireConverged(t, statuses)
 	requireExpectedAppHash(t, statuses[0], expected)
 	if statuses[0].Snapshot.Identities[0].Sequence != 1 {
 		t.Fatal("ordered rotation did not finalize after identity creation")
@@ -400,10 +433,9 @@ func TestFourValidatorCometBFTFinalityAndFaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	network.submit(t, 0, bobRaw)
-	statuses = network.waitState(t, []int{0, 1, 2}, func(status Status) bool {
+	statuses = network.waitConvergedState(t, []int{0, 1, 2}, func(status Status) bool {
 		return len(status.Snapshot.Identities) == 2
 	})
-	requireConverged(t, statuses)
 	expected, _, err = chain.Apply(expected, bobTx)
 	if err != nil {
 		t.Fatal(err)
@@ -432,10 +464,9 @@ func TestFourValidatorCometBFTFinalityAndFaults(t *testing.T) {
 	// Consensus-engine storage is on disk only for this restart boundary; the
 	// canonical application stays in the retained in-memory Application.
 	network.start(t, 2)
-	statuses = network.waitState(t, []int{0, 1, 2}, func(status Status) bool {
+	statuses = network.waitConvergedState(t, []int{0, 1, 2}, func(status Status) bool {
 		return len(status.Snapshot.Identities) == 3 && status.Height > beforeA.Height
 	})
-	requireConverged(t, statuses)
 	expected, _, err = chain.Apply(expected, charlieTx)
 	if err != nil {
 		t.Fatal(err)
