@@ -8,7 +8,7 @@ Identity ID
  └── Key B -- new-key possession proof
 ```
 
-Cryptographic verification is not current authorization: chain state later determines active/retired/revoked keys. Membership is separately chain-governed (`PENDING`, `ACTIVE`, `SUSPENDED`, `REVOKED`); a valid identity or node is not automatically a member or validator. ZION member identities are not P2P Peer IDs.
+Cryptographic verification is not current authorization: Phase 4 canonical chain state determines active and retired keys and enforces rotation sequence. Membership is separately chain-governed (`PENDING`, `ACTIVE`, `SUSPENDED`, `REVOKED`); a valid identity or node is not automatically a member or validator. `MembershipChange` authorization remains deferred. ZION member identities are not P2P Peer IDs.
 
 ## Phase 3 decoder surface
 

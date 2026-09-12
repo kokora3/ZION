@@ -1,0 +1,18 @@
+{
+  "canonical_transaction_cbor_hex": "a40101026c7a696f6e2d616c7068612d31036e4964656e7469747943726561746504a401a3010102a201676564323535313902582003a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8030102a20166736861323536025820ce1b5b6735ca6cbe78ca8751ccd075839485d9aa28db16fa5a45c5ff545e2c3303a20166736861323536025820f402add1d660604ff1d69d4925d0903b4335f19a9db19b27889feb66ab1b7c2f04a301676564323535313902a20166736861323536025820f402add1d660604ff1d69d4925d0903b4335f19a9db19b27889feb66ab1b7c2f035840373f425e345d1706d0b893f7598dcdddce23882315d2d65f7cbfea7fa0ec16d3d0f78fc5e585e81b0e187382f0d14257fb3caf1deaf72efa4c1ebb13a5e6790a",
+  "created_at": 1,
+  "expected_result_code": "OK",
+  "expected_state_hash": "zion:state:sha256:bca234fe93a0dbbcad0f614bbec986715e9fe2626083a267b6bb34d2d57ad23c",
+  "fixture_notice": "TEST ONLY - PUBLIC FIXTURE - NOT SECRET - NEVER USE IN PRODUCTION",
+  "identity_id": "zion:id:sha256:ce1b5b6735ca6cbe78ca8751ccd075839485d9aa28db16fa5a45c5ff545e2c33",
+  "initial_key_id": "zion:key:sha256:f402add1d660604ff1d69d4925d0903b4335f19a9db19b27889feb66ab1b7c2f",
+  "initial_public_key_algorithm": "ed25519",
+  "initial_public_key_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+  "network_id": "zion-alpha-1",
+  "schema_version": 1,
+  "signature_algorithm": "ed25519",
+  "signature_hex": "373f425e345d1706d0b893f7598dcdddce23882315d2d65f7cbfea7fa0ec16d3d0f78fc5e585e81b0e187382f0d14257fb3caf1deaf72efa4c1ebb13a5e6790a",
+  "signature_key_id": "zion:key:sha256:f402add1d660604ff1d69d4925d0903b4335f19a9db19b27889feb66ab1b7c2f",
+  "transaction_type": "IdentityCreate",
+  "tx_id": "zion:tx:sha256:1745e599a0e4eb79ec0f7adfc70dda2e84a58b994691b91e9540771ba2bbceb4"
+}

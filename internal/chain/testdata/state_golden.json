@@ -1,0 +1,17 @@
+{
+  "canonical_snapshot_cbor_hex": "a50101026c7a696f6e2d616c7068612d310363302e310481a401a20166736861323536025820ce1b5b6735ca6cbe78ca8751ccd075839485d9aa28db16fa5a45c5ff545e2c330282a301a201667368613235360258200f2207a09d83959ccf677422e6c24a707a349ca57550d8dbd0740dc09e5bc8a102a201676564323535313902582029acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd703f5a301a20166736861323536025820f402add1d660604ff1d69d4925d0903b4335f19a9db19b27889feb66ab1b7c2f02a201676564323535313902582003a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b803f4030104f40581a201a20166736861323536025820ce1b5b6735ca6cbe78ca8751ccd075839485d9aa28db16fa5a45c5ff545e2c33026750454e44494e47",
+  "fixture_notice": "TEST ONLY - PUBLIC FIXTURE - NOT SECRET - NEVER USE IN PRODUCTION",
+  "identity_id": "zion:id:sha256:ce1b5b6735ca6cbe78ca8751ccd075839485d9aa28db16fa5a45c5ff545e2c33",
+  "membership_status": "PENDING",
+  "network_id": "zion-alpha-1",
+  "protocol_version": "0.1",
+  "rotation_sequence": 1,
+  "scenario": [
+    "Genesis(zion-alpha-1)",
+    "IdentityCreate A",
+    "KeyRotation A to B"
+  ],
+  "schema_version": 1,
+  "sha256_digest_hex": "7109b67fb108557d907bac8dce3878cd7aa40554e4ff8cfea7b1f8bfa8b9fd85",
+  "state_hash": "zion:state:sha256:7109b67fb108557d907bac8dce3878cd7aa40554e4ff8cfea7b1f8bfa8b9fd85"
+}

@@ -1,3 +1,5 @@
-// Package chain will own deterministic chain state, transaction validation, and
-// canonical state transitions. No chain behavior is implemented in Phase 1.
+// Package chain owns deterministic transaction validation, canonical state,
+// atomic identity transitions, deterministic receipts, and StateHash derivation.
+// Consensus, networking, persistence, and governance authorization are outside
+// the Phase 4 package boundary.
 package chain
