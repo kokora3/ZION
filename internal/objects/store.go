@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -236,6 +237,51 @@ func (s *Store) Usage() (objectCount, objectBytes, quotaBytes uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.objectCount, s.objectBytes, s.quotaBytes
+}
+
+// ListObjectIDs returns a bounded deterministic inventory for rebuilding
+// derived local indexes. It exposes identifiers only, never filesystem paths.
+func (s *Store) ListObjectIDs(ctx context.Context, maximum int) ([]protocol.ObjectID, error) {
+	if err := contextErr(ctx); err != nil || maximum < 1 || maximum > 100000 {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("invalid object inventory limit")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	base := filepath.Join(s.root, "sha256")
+	values := []protocol.ObjectID{}
+	err := filepath.WalkDir(base, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".obj") {
+			return nil
+		}
+		digest := strings.TrimSuffix(entry.Name(), ".obj")
+		id, err := protocol.ParseObjectID("zion:obj:sha256:" + digest)
+		if err != nil {
+			return nil
+		}
+		expected, err := s.pathForID(id)
+		if err != nil || filepath.Clean(path) != expected {
+			return nil
+		}
+		values = append(values, id)
+		if len(values) > maximum {
+			return fmt.Errorf("object inventory exceeds rebuild limit")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(values, func(a, b int) bool { return values[a].String() < values[b].String() })
+	return values, nil
 }
 
 func readAndVerify(path string, requested protocol.ObjectID) (Object, error) {

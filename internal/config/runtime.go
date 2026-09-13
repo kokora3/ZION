@@ -27,6 +27,7 @@ type File struct {
 	P2P           P2P        `yaml:"p2p"`
 	API           API        `yaml:"api"`
 	Objects       Objects    `yaml:"objects"`
+	Board         Board      `yaml:"board"`
 	Consensus     Consensus  `yaml:"consensus"`
 }
 
@@ -56,6 +57,17 @@ type API struct {
 type Objects struct {
 	Directory  string `yaml:"directory"`
 	QuotaBytes uint64 `yaml:"quota_bytes"`
+}
+
+type Board struct {
+	Enabled               *bool  `yaml:"enabled"`
+	IndexPath             string `yaml:"index_path"`
+	AnnounceFanout        int    `yaml:"announce_fanout"`
+	SyncInterval          string `yaml:"sync_interval"`
+	SyncPageSize          int    `yaml:"sync_page_size"`
+	MaxSyncEventsPerCycle int    `yaml:"max_sync_events_per_cycle"`
+	MaxConcurrentHandlers int    `yaml:"max_concurrent_handlers"`
+	PeerTimeout           string `yaml:"peer_timeout"`
 }
 
 type Consensus struct {
@@ -145,6 +157,38 @@ func (f File) RuntimeConfig() (node.Config, error) {
 	}
 	if f.Objects.QuotaBytes != 0 {
 		cfg.ObjectQuotaBytes = f.Objects.QuotaBytes
+	}
+	if f.Board.Enabled != nil {
+		cfg.Board.Enabled = *f.Board.Enabled
+	}
+	if f.Board.IndexPath != "" {
+		cfg.BoardIndexPath = f.Board.IndexPath
+	}
+	if f.Board.AnnounceFanout != 0 {
+		cfg.Board.AnnounceFanout = f.Board.AnnounceFanout
+	}
+	if f.Board.SyncPageSize != 0 {
+		cfg.Board.SyncPageSize = f.Board.SyncPageSize
+	}
+	if f.Board.MaxSyncEventsPerCycle != 0 {
+		cfg.Board.MaxSyncEventsPerCycle = f.Board.MaxSyncEventsPerCycle
+	}
+	if f.Board.MaxConcurrentHandlers != 0 {
+		cfg.Board.MaxConcurrentHandlers = f.Board.MaxConcurrentHandlers
+	}
+	if f.Board.SyncInterval != "" {
+		value, err := time.ParseDuration(f.Board.SyncInterval)
+		if err != nil {
+			return node.Config{}, fmt.Errorf("invalid board sync_interval")
+		}
+		cfg.Board.SyncInterval = value
+	}
+	if f.Board.PeerTimeout != "" {
+		value, err := time.ParseDuration(f.Board.PeerTimeout)
+		if err != nil {
+			return node.Config{}, fmt.Errorf("invalid board peer_timeout")
+		}
+		cfg.Board.PeerTimeout = value
 	}
 	cfg.API.AllowedOrigins = append([]string(nil), f.API.AllowedOrigins...)
 	if f.API.BearerTokenFile != "" {

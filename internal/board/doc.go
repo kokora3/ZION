@@ -1,3 +1,3 @@
-// Package board will handle signed Board posts, replies, and references.
-// Board synchronization and content handling are deferred in Phase 1.
+// Package board implements canonical signed community POST/REPLY events and
+// bounded off-chain synchronization. It owns no canonical chain state.
 package board

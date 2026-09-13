@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kokora3/zion/internal/board"
+	"github.com/kokora3/zion/internal/identity"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/protocol"
 )
@@ -22,6 +25,28 @@ func cliTestObject(payload string) objects.Object {
 	return objects.Object{Core: protocol.UnsignedObjectCore{ObjectType: "note", SchemaVersion: protocol.UnsignedObjectSchemaV1,
 		CreatedAt: 1710000000123, ContentHash: protocol.NewContentHash(raw), SizeBytes: uint64(len(raw)),
 		Visibility: protocol.VisibilityPublic, Metadata: map[string]string{"suite": "cli"}}, Payload: raw}
+}
+
+func cliTestBoardEvent(t testing.TB) ([]byte, string) {
+	t.Helper()
+	key := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x61}, ed25519.SeedSize))
+	publicKey := identity.PublicFromPrivate(key)
+	genesis := identity.IdentityGenesisBody{SchemaVersion: identity.GenesisSchema, InitialPublicKey: publicKey, CreatedAt: 1700000000000}
+	identityID, _ := identity.DeriveIdentityID(genesis)
+	keyID, _ := identity.DeriveKeyID(publicKey)
+	contentObject, _ := board.BuildContentObject(board.Content{SchemaVersion: board.ContentSchema, Format: board.FormatMarkdown,
+		Title: "CLI Board", Body: "สวัสดี from zionctl"}, 1710000000123)
+	contentID, _ := contentObject.ObjectID()
+	event, err := board.SignEvent(board.EventBody{SchemaVersion: board.EventSchema, NetworkID: protocol.Alpha1NetworkID,
+		Kind: board.KindPost, AuthorIdentity: identityID, AuthorKeyID: keyID, CreatedAt: 1710000000123,
+		ContentObject: contentID.String(), References: []board.Reference{}}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventObject, _ := board.BuildEventObject(event)
+	raw, _ := eventObject.CanonicalBytes()
+	postID, _ := eventObject.ObjectID()
+	return raw, postID.String()
 }
 
 func TestWriteObjectResponseExactBytesAndNoOverwrite(t *testing.T) {
@@ -132,6 +157,59 @@ func TestObjectCommandsUseVersionedAPIEndToEnd(t *testing.T) {
 	} {
 		if seen[key] != 1 {
 			t.Fatalf("API request %q count = %d", key, seen[key])
+		}
+	}
+}
+
+func TestBoardCommandsUseVersionedAPIEndToEnd(t *testing.T) {
+	raw, postID := cliTestBoardEvent(t)
+	seen := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		key := request.Method + " " + request.URL.Path
+		seen[key]++
+		writer.Header().Set("Content-Type", "application/json")
+		if key == http.MethodPost+" /v1/board/events" {
+			var wrapper map[string]string
+			_ = json.NewDecoder(request.Body).Decode(&wrapper)
+			decoded, _ := base64.StdEncoding.DecodeString(wrapper["event"])
+			if wrapper["encoding"] != "base64" || !bytes.Equal(decoded, raw) {
+				http.Error(writer, `{"code":"INVALID_BOARD_EVENT"}`, http.StatusBadRequest)
+				return
+			}
+		}
+		_, _ = io.WriteString(writer, `{"post_id":"`+postID+`","status":"OK"}`)
+	}))
+	defer server.Close()
+	input := filepath.Join(t.TempDir(), "board-event.cbor")
+	if err := os.WriteFile(input, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"--api", server.URL, "board", "submit", input},
+		{"--api", server.URL, "board", "feed"},
+		{"--api", server.URL, "board", "get", postID},
+		{"--api", server.URL, "board", "replies", postID},
+		{"--api", server.URL, "board", "search", "ภาษาไทย board"},
+		{"--api", server.URL, "board", "hide", postID},
+		{"--api", server.URL, "board", "unhide", postID},
+	} {
+		output := runSuccessfulCLI(t, args)
+		if !strings.Contains(output, postID) {
+			t.Fatalf("%v output = %s", args, output)
+		}
+	}
+	wants := []string{
+		http.MethodPost + " /v1/board/events",
+		http.MethodGet + " /v1/board/posts",
+		http.MethodGet + " /v1/board/posts/" + postID,
+		http.MethodGet + " /v1/board/posts/" + postID + "/replies",
+		http.MethodGet + " /v1/board/search",
+		http.MethodPost + " /v1/board/posts/" + postID + "/hide",
+		http.MethodPost + " /v1/board/posts/" + postID + "/unhide",
+	}
+	for _, want := range wants {
+		if seen[want] != 1 {
+			t.Fatalf("request %q count = %d", want, seen[want])
 		}
 	}
 }

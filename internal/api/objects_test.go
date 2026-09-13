@@ -22,6 +22,13 @@ type objectBackend struct {
 	fetchErr    error
 	getErr      error
 	putErr      error
+	boardRaw    []byte
+	boardResult any
+	boardValue  any
+	boardFound  bool
+	boardErr    error
+	hiddenID    string
+	hidden      bool
 }
 
 func (b *objectBackend) Health() any       { return map[string]bool{"live": true} }
@@ -64,6 +71,20 @@ func (b *objectBackend) StatObject(ctx context.Context, id protocol.ObjectID) (o
 }
 func (b *objectBackend) FetchObject(context.Context, protocol.ObjectID) (objects.Object, error) {
 	return b.fetchObject, b.fetchErr
+}
+func (b *objectBackend) SubmitBoardEvent(_ context.Context, raw []byte) (any, error) {
+	b.boardRaw = append([]byte(nil), raw...)
+	return b.boardResult, b.boardErr
+}
+func (b *objectBackend) BoardFeed(int, int) (any, error) { return b.boardValue, b.boardErr }
+func (b *objectBackend) BoardPost(string) (any, bool, error) {
+	return b.boardValue, b.boardFound, b.boardErr
+}
+func (b *objectBackend) BoardReplies(string, int, int) (any, error) { return b.boardValue, b.boardErr }
+func (b *objectBackend) BoardSearch(string, int, int) (any, error)  { return b.boardValue, b.boardErr }
+func (b *objectBackend) SetBoardHidden(id string, hidden bool) error {
+	b.hiddenID, b.hidden = id, hidden
+	return b.boardErr
 }
 
 func apiTestObject(payload string) objects.Object {

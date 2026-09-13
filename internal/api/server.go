@@ -11,10 +11,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/kokora3/zion/internal/board"
+	"github.com/kokora3/zion/internal/index"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/protocol"
 )
@@ -57,6 +60,12 @@ type Backend interface {
 	GetObject(context.Context, protocol.ObjectID) (objects.Object, error)
 	StatObject(context.Context, protocol.ObjectID) (objects.Metadata, error)
 	FetchObject(context.Context, protocol.ObjectID) (objects.Object, error)
+	SubmitBoardEvent(context.Context, []byte) (any, error)
+	BoardFeed(offset, limit int) (any, error)
+	BoardPost(string) (any, bool, error)
+	BoardReplies(postID string, offset, limit int) (any, error)
+	BoardSearch(query string, offset, limit int) (any, error)
+	SetBoardHidden(string, bool) error
 }
 
 type Config struct {
@@ -197,6 +206,36 @@ func (s *Server) route(writer http.ResponseWriter, request *http.Request) {
 			}
 			s.writeJSON(writer, http.StatusOK, value)
 			return
+		case BasePath + "/board/posts":
+			offset, limit, err := pagination(request)
+			if err != nil {
+				s.writeError(writer, http.StatusBadRequest, "INVALID_PAGINATION", err.Error())
+				return
+			}
+			value, err := s.backend.BoardFeed(offset, limit)
+			if err != nil {
+				s.writeBoardError(writer, err)
+				return
+			}
+			s.writeJSON(writer, http.StatusOK, value)
+			return
+		case BasePath + "/board/search":
+			offset, limit, err := pagination(request)
+			if err != nil {
+				s.writeError(writer, http.StatusBadRequest, "INVALID_PAGINATION", err.Error())
+				return
+			}
+			value, err := s.backend.BoardSearch(request.URL.Query().Get("q"), offset, limit)
+			if err != nil {
+				s.writeBoardError(writer, err)
+				return
+			}
+			s.writeJSON(writer, http.StatusOK, value)
+			return
+		}
+		if strings.HasPrefix(path, BasePath+"/board/posts/") {
+			s.getBoardPost(writer, request)
+			return
 		}
 		if strings.HasPrefix(path, BasePath+"/objects/") {
 			s.getObject(writer, request)
@@ -241,11 +280,149 @@ func (s *Server) route(writer http.ResponseWriter, request *http.Request) {
 		s.fetchObject(writer, request)
 		return
 	}
+	if path == BasePath+"/board/events" && request.Method == http.MethodPost {
+		s.submitBoardEvent(writer, request)
+		return
+	}
+	if request.Method == http.MethodPost && strings.HasPrefix(path, BasePath+"/board/posts/") {
+		s.setBoardVisibility(writer, request)
+		return
+	}
 	if strings.HasPrefix(path, BasePath+"/") {
 		s.writeError(writer, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not supported")
 		return
 	}
 	s.writeError(writer, http.StatusNotFound, "NOT_FOUND", "endpoint not found")
+}
+
+func (s *Server) submitBoardEvent(writer http.ResponseWriter, request *http.Request) {
+	data, ok := s.readObjectBody(writer, request)
+	if !ok {
+		return
+	}
+	var wrapper struct {
+		Encoding string `json:"encoding"`
+		Event    string `json:"event"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wrapper); err != nil || wrapper.Encoding != "base64" || wrapper.Event == "" {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_BOARD_EVENT", "expected one base64 signed Board event object")
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF || len(wrapper.Event) > base64.StdEncoding.EncodedLen(objects.MaxObjectBytes) {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_BOARD_EVENT", "invalid or oversized Board event wrapper")
+		return
+	}
+	if len(wrapper.Event) > base64.StdEncoding.EncodedLen(board.MaxBoardEventObjectBytes) {
+		s.writeError(writer, http.StatusRequestEntityTooLarge, "BOARD_EVENT_TOO_LARGE", "Board event exceeds the hard limit")
+		return
+	}
+	raw, err := base64.StdEncoding.DecodeString(wrapper.Event)
+	if err != nil || len(raw) > board.MaxBoardEventObjectBytes {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_BOARD_EVENT", "invalid base64 Board event")
+		return
+	}
+	result, err := s.backend.SubmitBoardEvent(request.Context(), raw)
+	if err != nil {
+		s.writeBoardError(writer, err)
+		return
+	}
+	s.writeJSON(writer, http.StatusCreated, result)
+}
+
+func (s *Server) getBoardPost(writer http.ResponseWriter, request *http.Request) {
+	prefix := BasePath + "/board/posts/"
+	value := strings.TrimPrefix(request.URL.Path, prefix)
+	if strings.HasSuffix(value, "/replies") {
+		id := strings.TrimSuffix(value, "/replies")
+		if _, err := protocol.ParseObjectID(id); err != nil {
+			s.writeError(writer, http.StatusBadRequest, "INVALID_POST_ID", "invalid Board post ID")
+			return
+		}
+		offset, limit, err := pagination(request)
+		if err != nil {
+			s.writeError(writer, http.StatusBadRequest, "INVALID_PAGINATION", err.Error())
+			return
+		}
+		result, err := s.backend.BoardReplies(id, offset, limit)
+		if err != nil {
+			s.writeBoardError(writer, err)
+			return
+		}
+		s.writeJSON(writer, http.StatusOK, result)
+		return
+	}
+	if value == "" || strings.Contains(value, "/") {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_POST_ID", "invalid Board post ID")
+		return
+	}
+	if _, err := protocol.ParseObjectID(value); err != nil {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_POST_ID", "invalid Board post ID")
+		return
+	}
+	result, found, err := s.backend.BoardPost(value)
+	if err != nil {
+		s.writeBoardError(writer, err)
+		return
+	}
+	if !found {
+		s.writeError(writer, http.StatusNotFound, "BOARD_POST_NOT_FOUND", "Board post not found")
+		return
+	}
+	s.writeJSON(writer, http.StatusOK, result)
+}
+
+func (s *Server) setBoardVisibility(writer http.ResponseWriter, request *http.Request) {
+	prefix := BasePath + "/board/posts/"
+	value := strings.TrimPrefix(request.URL.Path, prefix)
+	hidden := false
+	switch {
+	case strings.HasSuffix(value, "/hide"):
+		hidden = true
+		value = strings.TrimSuffix(value, "/hide")
+	case strings.HasSuffix(value, "/unhide"):
+		value = strings.TrimSuffix(value, "/unhide")
+	default:
+		s.writeError(writer, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not supported")
+		return
+	}
+	if _, err := protocol.ParseObjectID(value); err != nil {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_POST_ID", "invalid Board post ID")
+		return
+	}
+	if err := s.backend.SetBoardHidden(value, hidden); err != nil {
+		s.writeBoardError(writer, err)
+		return
+	}
+	status := "VISIBLE"
+	if hidden {
+		status = "LOCALLY_HIDDEN"
+	}
+	s.writeJSON(writer, http.StatusOK, map[string]any{"post_id": value, "local_visibility": status})
+}
+
+func (s *Server) writeBoardError(writer http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, board.ErrPublicationDenied):
+		s.writeError(writer, http.StatusForbidden, "BOARD_PUBLICATION_DENIED", "ACTIVE membership and the current signing key are required")
+	case errors.Is(err, board.ErrParentNotFound):
+		s.writeError(writer, http.StatusUnprocessableEntity, "BOARD_PARENT_NOT_FOUND", "reply parent is not available locally")
+	case errors.Is(err, board.ErrBoardContentMissing):
+		s.writeError(writer, http.StatusUnprocessableEntity, "BOARD_CONTENT_MISSING", "primary Board content is not available locally")
+	case errors.Is(err, board.ErrInvalidContent):
+		s.writeError(writer, http.StatusUnprocessableEntity, "INVALID_BOARD_CONTENT", "Board content is invalid")
+	case errors.Is(err, board.ErrInvalidEvent):
+		s.writeError(writer, http.StatusUnprocessableEntity, "INVALID_BOARD_EVENT", "Board event is invalid")
+	case errors.Is(err, index.ErrInvalidBoardQuery):
+		s.writeError(writer, http.StatusBadRequest, "INVALID_BOARD_QUERY", "Board query is invalid or exceeds limits")
+	case errors.Is(err, objects.ErrStoreFull):
+		s.writeError(writer, http.StatusInsufficientStorage, "OBJECT_STORE_FULL", "local object-store quota exceeded")
+	case errors.Is(err, objects.ErrObjectNotFound), errors.Is(err, os.ErrNotExist):
+		s.writeError(writer, http.StatusNotFound, "BOARD_POST_NOT_FOUND", "Board post not found")
+	default:
+		s.writeError(writer, http.StatusInternalServerError, "BOARD_ERROR", "Board operation failed")
+	}
 }
 
 func (s *Server) putObject(writer http.ResponseWriter, request *http.Request) {

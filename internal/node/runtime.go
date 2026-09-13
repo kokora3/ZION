@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/kokora3/zion/internal/api"
+	"github.com/kokora3/zion/internal/board"
 	"github.com/kokora3/zion/internal/chain"
 	"github.com/kokora3/zion/internal/consensus"
 	"github.com/kokora3/zion/internal/governance"
 	"github.com/kokora3/zion/internal/identity"
+	"github.com/kokora3/zion/internal/index"
 	"github.com/kokora3/zion/internal/membership"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/p2p"
@@ -74,6 +76,8 @@ type Config struct {
 	ObjectDirectory           string
 	ObjectQuotaBytes          uint64
 	ObjectFetch               objects.FetchConfig
+	Board                     board.Config
+	BoardIndexPath            string
 }
 
 func DefaultConfig(dataDir string, genesisID protocol.HashDigest, initial chain.State) Config {
@@ -83,7 +87,8 @@ func DefaultConfig(dataDir string, genesisID protocol.HashDigest, initial chain.
 		SyncInterval: 5 * time.Second, SyncTimeout: 10 * time.Second,
 		RecentTransactions: 1024, MaxRelayHandlers: 16, MaxSyncHandlers: 4,
 		ObjectDirectory: filepath.Join(dataDir, "objects"), ObjectQuotaBytes: objects.DefaultQuotaBytes,
-		ObjectFetch: objects.DefaultFetchConfig()}
+		ObjectFetch: objects.DefaultFetchConfig(), Board: board.DefaultConfig(),
+		BoardIndexPath: filepath.Join(dataDir, "board", "index.json")}
 }
 
 type TransactionRecord struct {
@@ -95,27 +100,29 @@ type TransactionRecord struct {
 }
 
 type Runtime struct {
-	mu        sync.RWMutex
-	cfg       Config
-	lifecycle Lifecycle
-	sync      SyncStatus
-	state     chain.State
-	height    int64
-	persisted bool
-	store     *StateStore
-	consensus ConsensusService
-	p2p       *p2p.Node
-	objects   *objects.Store
-	fetcher   *objects.Service
-	api       *api.Server
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	syncMu    sync.Mutex
-	relaySem  chan struct{}
-	syncSem   chan struct{}
-	tx        map[string]TransactionRecord
-	txOrder   []string
+	mu         sync.RWMutex
+	cfg        Config
+	lifecycle  Lifecycle
+	sync       SyncStatus
+	state      chain.State
+	height     int64
+	persisted  bool
+	store      *StateStore
+	consensus  ConsensusService
+	p2p        *p2p.Node
+	objects    *objects.Store
+	fetcher    *objects.Service
+	board      *board.Service
+	boardIndex *index.BoardIndex
+	api        *api.Server
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	syncMu     sync.Mutex
+	relaySem   chan struct{}
+	syncSem    chan struct{}
+	tx         map[string]TransactionRecord
+	txOrder    []string
 }
 
 func New(cfg Config) (*Runtime, error) {
@@ -123,7 +130,7 @@ func New(cfg Config) (*Runtime, error) {
 		cfg.InitialState.NetworkID != cfg.NetworkID || cfg.ShutdownTimeout <= 0 || cfg.RecentTransactions < 1 ||
 		cfg.SyncInterval < 100*time.Millisecond || cfg.SyncInterval > time.Hour || cfg.SyncTimeout <= 0 || cfg.SyncTimeout > time.Minute ||
 		cfg.RecentTransactions > 10000 || cfg.MaxRelayHandlers < 1 || cfg.MaxRelayHandlers > 128 ||
-		cfg.MaxSyncHandlers < 1 || cfg.MaxSyncHandlers > 16 || cfg.ObjectDirectory == "" {
+		cfg.MaxSyncHandlers < 1 || cfg.MaxSyncHandlers > 16 || cfg.ObjectDirectory == "" || cfg.BoardIndexPath == "" {
 		return nil, fmt.Errorf("invalid node runtime configuration")
 	}
 	if cfg.P2P.NetworkID != cfg.NetworkID || !equalHash(cfg.P2P.NetworkFingerprint, cfg.GenesisID) {
@@ -145,7 +152,11 @@ func New(cfg Config) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open object store: %w", err)
 	}
-	return &Runtime{cfg: cfg, lifecycle: Created, sync: Uninitialized, store: store, objects: objectStore,
+	boardIndex, err := index.OpenBoard(cfg.BoardIndexPath)
+	if err != nil {
+		return nil, fmt.Errorf("open board index: %w", err)
+	}
+	return &Runtime{cfg: cfg, lifecycle: Created, sync: Uninitialized, store: store, objects: objectStore, boardIndex: boardIndex,
 		relaySem: make(chan struct{}, cfg.MaxRelayHandlers), syncSem: make(chan struct{}, cfg.MaxSyncHandlers),
 		tx: make(map[string]TransactionRecord)}, nil
 }
@@ -230,6 +241,18 @@ func (r *Runtime) Start(parent context.Context) (err error) {
 	r.mu.Lock()
 	r.fetcher = objectService
 	r.mu.Unlock()
+	if err := r.rebuildBoardIndex(runtimeContext); err != nil {
+		return fmt.Errorf("rebuild board index: %w", err)
+	}
+	if r.cfg.Board.Enabled {
+		boardService, err := board.NewService(runtimeContext, p2pNode, r.cfg.NetworkID, r.cfg.Board, r)
+		if err != nil {
+			return fmt.Errorf("start board service: %w", err)
+		}
+		r.mu.Lock()
+		r.board = boardService
+		r.mu.Unlock()
+	}
 	r.installStreamHandlers()
 	if service != nil {
 		if setter, ok := service.(interface {
@@ -311,7 +334,7 @@ func (r *Runtime) Stop(ctx context.Context) error {
 
 func (r *Runtime) cleanup(ctx context.Context) error {
 	r.mu.Lock()
-	cancel, apiServer, p2pNode, objectService := r.cancel, r.api, r.p2p, r.fetcher
+	cancel, apiServer, p2pNode, objectService, boardService := r.cancel, r.api, r.p2p, r.fetcher, r.board
 	r.cancel = nil
 	r.mu.Unlock()
 	if cancel != nil {
@@ -323,6 +346,9 @@ func (r *Runtime) cleanup(ctx context.Context) error {
 		if err := apiServer.Close(ctx); err != nil && first == nil {
 			first = err
 		}
+	}
+	if boardService != nil {
+		boardService.Close()
 	}
 	if objectService != nil {
 		objectService.Close()
@@ -349,6 +375,9 @@ func (r *Runtime) cleanup(ctx context.Context) error {
 	}
 	if r.fetcher == objectService {
 		r.fetcher = nil
+	}
+	if r.board == boardService {
+		r.board = nil
 	}
 	if r.consensus == consensusService {
 		r.consensus = nil
@@ -489,12 +518,19 @@ func (r *Runtime) Status() any {
 	}
 	consensusActive := r.consensus != nil && r.consensus.Active()
 	objectCount, objectBytes, objectQuota := r.objects.Usage()
+	posts, replies, hidden := r.boardIndex.Counts()
+	boardSync := "DISABLED"
+	if r.cfg.Board.Enabled && r.board != nil {
+		boardSync = "ACTIVE"
+	}
 	return map[string]any{"network_id": r.cfg.NetworkID, "genesis_id": hex.EncodeToString(r.cfg.GenesisID.Digest),
 		"runtime_state": r.lifecycle, "roles": append([]p2p.Role(nil), r.cfg.P2P.Roles...), "peer_id": peerID,
 		"sync_status": r.sync, "accepted_height": r.height, "state_hash": hash.String(),
 		"consensus_active": consensusActive, "validator_authorized": r.validatorAuthorized(r.state),
 		"protocol_version": protocol.CurrentProtocolVersion, "object_store_enabled": true,
-		"object_count": objectCount, "object_bytes": objectBytes, "object_quota_bytes": objectQuota}
+		"object_count": objectCount, "object_bytes": objectBytes, "object_quota_bytes": objectQuota,
+		"board_enabled": r.cfg.Board.Enabled, "indexed_posts": posts, "indexed_replies": replies,
+		"hidden_local": hidden, "board_sync_state": boardSync}
 }
 
 func (r *Runtime) Peers() any {

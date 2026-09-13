@@ -175,6 +175,24 @@ func verify(network protocol.NetworkID, purpose string, payload any, p PublicKey
 	return nil
 }
 
+// SignPurpose exposes the existing Phase 3 domain-separated signing envelope
+// to later protocol domains without duplicating cryptography or changing any
+// Phase 3 signature bytes.
+func SignPurpose(network protocol.NetworkID, purpose string, payload any, key ed25519.PrivateKey) (Signature, error) {
+	if network == "" || purpose == "" {
+		return Signature{}, fmt.Errorf("network and signing purpose are required")
+	}
+	return sign(network, purpose, payload, key)
+}
+
+// VerifyPurpose verifies a signature made by SignPurpose.
+func VerifyPurpose(network protocol.NetworkID, purpose string, payload any, publicKey PublicKey, signature Signature) error {
+	if network == "" || purpose == "" {
+		return fmt.Errorf("network and signing purpose are required")
+	}
+	return verify(network, purpose, payload, publicKey, signature)
+}
+
 type IdentityGenesisProof struct {
 	Body         IdentityGenesisBody `cbor:"1,keyasint"`
 	IdentityID   IdentityID          `cbor:"2,keyasint"`

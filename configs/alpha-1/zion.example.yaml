@@ -1,4 +1,4 @@
-# Phase 8 local runtime example. It contains no private keys and is not canonical state.
+# Phase 10 local runtime example. It contains no private keys and is not canonical state.
 network_id: zion-alpha-1
 genesis_id: <verified-64-character-lowercase-genesis-sha256>
 data_directory: <set-a-local-data-directory>
@@ -29,6 +29,16 @@ objects:
   # Local off-chain storage. Neither this path nor quota enters StateHash/AppHash.
   directory: <data-directory>/objects
   quota_bytes: 1073741824 # 1 GiB; each canonical object is hard-limited to 1 MiB.
+board:
+  # Board events/content use the object store; this derived index is rebuildable.
+  enabled: true
+  index_path: <data-directory>/board/index.json
+  announce_fanout: 8
+  sync_interval: 30s
+  sync_page_size: 16
+  max_sync_events_per_cycle: 256
+  max_concurrent_handlers: 8
+  peer_timeout: 3s
 consensus:
   # Set enabled: true together with a VALIDATOR role. The root must already
   # contain the matching CometBFT genesis, private-validator, and node-key files.

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kokora3/zion/internal/board"
 	"github.com/kokora3/zion/internal/chain"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/protocol"
@@ -31,7 +32,7 @@ func main() {
 	_ = flags.Parse(os.Args[1:])
 	args := flags.Args()
 	if len(args) == 0 {
-		fail("usage: zionctl [--api URL] status|peers|state|tx ...|object put|get|stat|fetch ...")
+		fail("usage: zionctl [--api URL] status|peers|state|tx ...|object ...|board ...")
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	var method, path string
@@ -119,6 +120,52 @@ func main() {
 			method, path = http.MethodPost, "/v1/objects/"+url.PathEscape(id)+"/fetch"
 		default:
 			fail("unknown object command")
+		}
+	case "board":
+		if len(args) < 2 {
+			fail("usage: zionctl board submit|feed|get|replies|search|hide|unhide")
+		}
+		switch args[1] {
+		case "submit":
+			if len(args) != 3 {
+				fail("usage: zionctl board submit <signed-event-object-file>")
+			}
+			raw, err := readBoundedFile(args[2], objects.MaxObjectBytes, "Board event")
+			if err != nil {
+				fail(err.Error())
+			}
+			object, err := objects.Decode(raw)
+			if err != nil {
+				fail("invalid Board event object: " + err.Error())
+			}
+			if _, err := board.DecodeEventObject(object); err != nil {
+				fail("invalid Board event object: " + err.Error())
+			}
+			wrapper, _ := json.Marshal(map[string]string{"encoding": "base64", "event": base64.StdEncoding.EncodeToString(raw)})
+			method, path, body = http.MethodPost, "/v1/board/events", bytes.NewReader(wrapper)
+		case "feed":
+			if len(args) != 2 {
+				fail("usage: zionctl board feed")
+			}
+			method, path = http.MethodGet, "/v1/board/posts"
+		case "get", "replies", "hide", "unhide":
+			if len(args) != 3 {
+				fail("usage: zionctl board " + args[1] + " <post-id>")
+			}
+			id := requireObjectID(args[2])
+			method, path = http.MethodGet, "/v1/board/posts/"+url.PathEscape(id)
+			if args[1] == "replies" {
+				path += "/replies"
+			} else if args[1] == "hide" || args[1] == "unhide" {
+				method, path = http.MethodPost, path+"/"+args[1]
+			}
+		case "search":
+			if len(args) != 3 || args[2] == "" {
+				fail("usage: zionctl board search <query>")
+			}
+			method, path = http.MethodGet, "/v1/board/search?q="+url.QueryEscape(args[2])
+		default:
+			fail("unknown board command")
 		}
 	default:
 		fail("unknown command")

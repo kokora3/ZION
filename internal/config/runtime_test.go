@@ -11,6 +11,7 @@ import (
 	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
 	cmtp2p "github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
+	"github.com/kokora3/zion/internal/board"
 	"github.com/kokora3/zion/internal/consensus"
 	"github.com/kokora3/zion/internal/p2p"
 	"github.com/kokora3/zion/internal/protocol"
@@ -20,13 +21,21 @@ func TestRuntimeConfigNormalAndValidatorComposition(t *testing.T) {
 	fingerprint := protocol.HashBytes([]byte("phase-8-config-normal"))
 	normal := File{NetworkID: string(protocol.Alpha1NetworkID), GenesisID: hex.EncodeToString(fingerprint.Digest),
 		DataDirectory: t.TempDir(), Roles: []p2p.Role{p2p.RoleNormal},
-		Objects: Objects{Directory: filepath.Join(t.TempDir(), "object-store"), QuotaBytes: 8 << 20}}
+		Objects: Objects{Directory: filepath.Join(t.TempDir(), "object-store"), QuotaBytes: 8 << 20},
+		Board: Board{IndexPath: filepath.Join(t.TempDir(), "board-index.json"), AnnounceFanout: 4, SyncInterval: "2s",
+			SyncPageSize: 8, MaxSyncEventsPerCycle: 64, MaxConcurrentHandlers: 3, PeerTimeout: "1s"}}
 	normalConfig, err := normal.RuntimeConfig()
 	if err != nil || normalConfig.ConsensusFactory != nil || normalConfig.FreshStateIsAuthoritative {
 		t.Fatalf("normal runtime config: %v", err)
 	}
 	if normalConfig.ObjectDirectory != normal.Objects.Directory || normalConfig.ObjectQuotaBytes != normal.Objects.QuotaBytes {
 		t.Fatal("local object-store configuration was not applied")
+	}
+	if normalConfig.BoardIndexPath != normal.Board.IndexPath || normalConfig.Board.AnnounceFanout != 4 ||
+		normalConfig.Board.SyncInterval != 2*time.Second || normalConfig.Board.SyncPageSize != 8 ||
+		normalConfig.Board.MaxSyncEventsPerCycle != 64 || normalConfig.Board.MaxConcurrentHandlers != 3 ||
+		normalConfig.Board.PeerTimeout != time.Second || normalConfig.Board.Enabled != board.DefaultConfig().Enabled {
+		t.Fatal("local Board configuration was not applied")
 	}
 
 	root := filepath.Join(t.TempDir(), "consensus")

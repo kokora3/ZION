@@ -85,3 +85,17 @@ The `/zion/object/0.1.0` protocol runs only over authenticated, compatible Phase
 The local API accepts object bytes, never a server filesystem path. It preserves loopback defaults, bearer authentication for non-loopback binding, exact-origin CORS, bounded concurrency, and timeouts. Responses omit storage paths, credentials, private keys, and raw internal errors. The CLI validates downloaded bytes before writing and refuses accidental overwrite unless `--force` is explicit.
 
 Content addressing proves byte integrity relative to an identifier; it does not prove authorship, endorsement, safety, availability, or permanence. The current `LOCAL` visibility label is metadata, not encryption or access control. Phase 9 provides no confidentiality, DHT, chunking, automated replication, garbage collection, or permanent-storage guarantee.
+
+## Phase 10 signed-Board boundaries
+
+Board events use the dedicated, NetworkID-bound `zion.board.event/v1` signing purpose. New local publication requires current ACTIVE membership and the identity's current active KeyID. A Board signature proves authorship relative to that public key; it does not grant chain, membership, governance, validator, bootstrap, or storage authority.
+
+A retired-key or now-suspended author's historical signature may remain cryptographically valid. Remote events therefore expose signature validity, current membership, and `CURRENTLY_AUTHORIZED` versus `HISTORICAL_OR_UNCONFIRMED` independently. This current-state classification is not proof of authorization at an unrecorded historical chain height and is not perfect spam resistance or proof-of-human.
+
+Announcement and sync origins are untrusted. Event and content objects are canonically decoded and their independent Phase 2 ObjectIDs recomputed; signatures and local chain classification are checked before an event is indexed. Announcement does not imply storage acceptance, endorsement, finality, or permanent availability. Content is fetched only after event admission and is again validated against its ObjectID and Board content schema.
+
+Event objects, content bodies, titles, references, announce frames, sync pages, handler concurrency, fanout, queries, and search results are bounded. Board text is untrusted data. The backend neither executes HTML/script nor treats MARKDOWN as active content; any future renderer must escape or sanitize it. Malformed input must fail without panic or chain mutation.
+
+The Board index and local hide map are rebuildable operational state. Hiding does not delete immutable objects, retract data from peers, or create global moderation authority. Public P2P content may persist on independent nodes. Phase 10 makes no confidentiality, private-group, end-to-end encryption, anonymity, guaranteed deletion, or permanent-availability claim.
+
+Board objects, availability, index rows, search results, local hiding, announcements, and sync timing never enter canonical state. Ordinary POST/REPLY activity does not alter membership, governance, validators, transactions, `StateHash`, or `AppHash`.

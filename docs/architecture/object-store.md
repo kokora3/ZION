@@ -57,4 +57,4 @@ Fetch order/timing -----X
 
 Storing, fetching, deleting outside the implementation, corrupting, or failing to retrieve an object does not mutate membership, governance, validators, transactions, `StateHash`, or `AppHash`. References may be canonical in later phases, but availability remains off-chain. The current `LOCAL` visibility label is metadata, not encryption or access control; Phase 9 object transport and storage provide no confidentiality.
 
-Board, Research Registry, Resource Registry, application-level author signatures, chunking, erasure coding, automated replication, garbage collection, DHT/provider records, relay-based retrieval, and permanent storage guarantees are deferred beyond Phase 9.
+Phase 10 builds signed Board events on top of this unchanged generic store. Research Registry, Resource Registry, chunking, erasure coding, automated replication, garbage collection, DHT/provider records, and permanent storage guarantees remain deferred.
