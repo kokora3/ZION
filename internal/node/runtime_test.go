@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -289,29 +292,59 @@ func TestOutboundRuntimeSyncRelayAPIBootstrapLossAndRestart(t *testing.T) {
 	}
 }
 
-func TestFourValidatorRuntimeFinalityPersistenceAndRestart(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	privateKeys := make([]cmted25519.PrivKey, consensus.DefaultValidatorCount)
-	validators := make([]consensus.Validator, consensus.DefaultValidatorCount)
-	for index := range privateKeys {
-		privateKeys[index] = cmted25519.GenPrivKeyFromSecret([]byte("TEST ONLY PUBLIC PHASE 8 VALIDATOR " + string(rune('A'+index))))
-		validators[index] = consensus.Validator{Name: "phase8-validator-" + string(rune('a'+index)),
-			PublicKey: privateKeys[index].PubKey().Bytes(), Power: consensus.DefaultValidatorPower}
-	}
-	genesis, err := consensus.NewGenesis(protocol.Alpha1NetworkID, validators)
+const runtimePortBindAttempts = 5
+
+type runtimeTCPReservation struct {
+	listener net.Listener
+	address  string
+}
+
+func reserveRuntimeTCPAddress(t testing.TB) *runtimeTCPReservation {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	type validatorRuntime struct {
-		runtime *Runtime
-		config  Config
-		app     *consensus.Application
+	reservation := &runtimeTCPReservation{listener: listener, address: listener.Addr().String()}
+	t.Cleanup(func() { _ = reservation.release() })
+	return reservation
+}
+
+func (reservation *runtimeTCPReservation) release() error {
+	if reservation == nil || reservation.listener == nil {
+		return nil
 	}
-	nodes := make([]validatorRuntime, len(privateKeys))
+	err := reservation.listener.Close()
+	reservation.listener = nil
+	return err
+}
+
+func isRuntimeAddressInUse(err error) bool {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "address already in use") ||
+		strings.Contains(message, "only one usage of each socket address")
+}
+
+type validatorRuntimeHarness struct {
+	runtime *Runtime
+	config  Config
+	comet   *cmtconfig.Config
+	app     *consensus.Application
+}
+
+func newValidatorRuntimeHarness(t testing.TB, genesis consensus.Genesis, privateKeys []cmted25519.PrivKey,
+	validators []consensus.Validator,
+) ([]validatorRuntimeHarness, []*runtimeTCPReservation) {
+	t.Helper()
+	nodes := make([]validatorRuntimeHarness, len(privateKeys))
+	ports := make([]*runtimeTCPReservation, len(nodes))
 	addresses := make([]string, len(nodes))
 	for index := range addresses {
-		addresses[index] = freeRuntimeTCPAddress(t)
+		ports[index] = reserveRuntimeTCPAddress(t)
+		addresses[index] = ports[index].address
 	}
 	for index := range nodes {
 		root := filepath.Join(t.TempDir(), "validator")
@@ -366,6 +399,7 @@ func TestFourValidatorRuntimeFinalityPersistenceAndRestart(t *testing.T) {
 		}
 		entry := &nodes[index]
 		entry.config = cfg
+		entry.comet = comet
 		entry.config.ConsensusFactory = func(state chain.State, height int64) (ConsensusService, error) {
 			app, err := consensus.NewApplicationFromState(genesis, state, height)
 			if err != nil {
@@ -374,15 +408,89 @@ func TestFourValidatorRuntimeFinalityPersistenceAndRestart(t *testing.T) {
 			entry.app = app
 			return consensus.NewService(comet, app)
 		}
-		entry.runtime, err = New(entry.config)
+		created, err := New(entry.config)
 		if err != nil {
 			t.Fatal(err)
 		}
+		entry.runtime = created
+	}
+	return nodes, ports
+}
+
+func startValidatorRuntimeHarness(ctx context.Context, nodes []validatorRuntimeHarness,
+	ports []*runtimeTCPReservation,
+) (int, error) {
+	for index := range nodes {
+		if err := ports[index].release(); err != nil {
+			return index, fmt.Errorf("release validator runtime %d port reservation: %w", index, err)
+		}
+		if err := nodes[index].runtime.Start(ctx); err != nil {
+			for pending := index + 1; pending < len(ports); pending++ {
+				_ = ports[pending].release()
+			}
+			return index, fmt.Errorf("start validator runtime %d: %w", index, err)
+		}
+	}
+	return len(nodes), nil
+}
+
+func stopValidatorRuntimeHarness(nodes []validatorRuntimeHarness, count int) {
+	quiesceValidatorRuntimeHarness(nodes, count)
+	for index := 0; index < count; index++ {
+		_ = nodes[index].runtime.Stop(context.Background())
+	}
+}
+
+func quiesceValidatorRuntimeHarness(nodes []validatorRuntimeHarness, count int) {
+	stoppedSwitch := false
+	for index := 0; index < count; index++ {
+		nodes[index].runtime.mu.RLock()
+		service, ok := nodes[index].runtime.consensus.(*consensus.Service)
+		nodes[index].runtime.mu.RUnlock()
+		if !ok || service.Node() == nil || !service.Node().Switch().IsRunning() {
+			continue
+		}
+		_ = service.Node().Switch().Stop()
+		service.Node().Switch().Wait()
+		stoppedSwitch = true
+	}
+	if stoppedSwitch {
+		// CometBFT v1.0.1 does not join per-peer consensus gossip routines when
+		// its switch stops. Give those routines several configured 10 ms query
+		// intervals to observe the stopped peer/reactor before Runtime closes the
+		// underlying Pebble stores. This is test-harness lifecycle coordination.
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+func TestFourValidatorRuntimeFinalityPersistenceAndRestart(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	privateKeys := make([]cmted25519.PrivKey, consensus.DefaultValidatorCount)
+	validators := make([]consensus.Validator, consensus.DefaultValidatorCount)
+	for index := range privateKeys {
+		privateKeys[index] = cmted25519.GenPrivKeyFromSecret([]byte("TEST ONLY PUBLIC PHASE 8 VALIDATOR " + string(rune('A'+index))))
+		validators[index] = consensus.Validator{Name: "phase8-validator-" + string(rune('a'+index)),
+			PublicKey: privateKeys[index].PubKey().Bytes(), Power: consensus.DefaultValidatorPower}
+	}
+	genesis, err := consensus.NewGenesis(protocol.Alpha1NetworkID, validators)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nodes []validatorRuntimeHarness
+	for attempt := 1; attempt <= runtimePortBindAttempts; attempt++ {
+		candidate, ports := newValidatorRuntimeHarness(t, genesis, privateKeys, validators)
+		started, startErr := startValidatorRuntimeHarness(ctx, candidate, ports)
+		if startErr == nil {
+			nodes = candidate
+			break
+		}
+		stopValidatorRuntimeHarness(candidate, started)
+		if !isRuntimeAddressInUse(startErr) || attempt == runtimePortBindAttempts {
+			t.Fatal(startErr)
+		}
 	}
 	for index := range nodes {
-		if err := nodes[index].runtime.Start(ctx); err != nil {
-			t.Fatalf("start validator runtime %d: %v", index, err)
-		}
 		defer nodes[index].runtime.Stop(context.Background())
 		if len(nodes[index].runtime.P2P().ListenAddresses()) == 0 {
 			t.Fatal("validator runtime did not start general P2P")
@@ -424,11 +532,18 @@ func TestFourValidatorRuntimeFinalityPersistenceAndRestart(t *testing.T) {
 			t.Fatalf("validator runtime %d AppHash mismatch", index)
 		}
 	}
+	quiesceValidatorRuntimeHarness(nodes, len(nodes))
 	for index := range nodes {
 		if err := nodes[index].runtime.Stop(context.Background()); err != nil {
 			t.Fatalf("stop validator runtime %d: %v", index, err)
 		}
 	}
+	// This restart verifies only durable application state, so it does not need
+	// a known consensus peer address. Let the real CometBFT listener bind port 0
+	// directly, avoiding a second allocate-close-bind handoff.
+	nodes[0].comet.P2P.ListenAddress = "tcp://127.0.0.1:0"
+	nodes[0].comet.P2P.ExternalAddress = ""
+	nodes[0].comet.P2P.PersistentPeers = ""
 	restarted, err := New(nodes[0].config)
 	if err != nil {
 		t.Fatal(err)
@@ -440,19 +555,6 @@ func TestFourValidatorRuntimeFinalityPersistenceAndRestart(t *testing.T) {
 	if runtimeHash(t, restarted) != wantHash {
 		t.Fatal("validator restart did not restore persisted StateHash")
 	}
-}
-
-func freeRuntimeTCPAddress(t testing.TB) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	address := listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return address
 }
 
 type httpResult struct {

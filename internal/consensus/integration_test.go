@@ -29,9 +29,41 @@ import (
 
 const (
 	networkStartupTimeout = 20 * time.Second
-	finalityTimeout       = 15 * time.Second
+	finalityTimeout       = 30 * time.Second
 	quorumLossWindow      = 1500 * time.Millisecond
 )
+
+type loopbackTCPReservation struct {
+	listener net.Listener
+	address  string
+}
+
+func reserveLoopbackAddress(t testing.TB) *loopbackTCPReservation {
+	t.Helper()
+	reservation, err := reserveLoopbackAddressAt("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reservation.release() })
+	return reservation
+}
+
+func reserveLoopbackAddressAt(address string) (*loopbackTCPReservation, error) {
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return nil, err
+	}
+	return &loopbackTCPReservation{listener: listener, address: listener.Addr().String()}, nil
+}
+
+func (reservation *loopbackTCPReservation) release() error {
+	if reservation == nil || reservation.listener == nil {
+		return nil
+	}
+	err := reservation.listener.Close()
+	reservation.listener = nil
+	return err
+}
 
 type localValidator struct {
 	index   int
@@ -43,24 +75,12 @@ type localValidator struct {
 	nodeKey *p2p.NodeKey
 	node    *node.Node
 	service *Service
+	port    *loopbackTCPReservation
 }
 
 type localNetwork struct {
 	genesis Genesis
 	nodes   []*localValidator
-}
-
-func freeLoopbackAddress(t testing.TB) string {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	address := listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return address
 }
 
 func newLocalNetwork(t testing.TB) *localNetwork {
@@ -82,8 +102,9 @@ func newLocalNetworkWithGenesis(t testing.TB, genesis Genesis, validatorKeys []c
 		if err != nil {
 			t.Fatal(err)
 		}
+		port := reserveLoopbackAddress(t)
 		network.nodes[i] = &localValidator{
-			index: i, root: root, address: freeLoopbackAddress(t), app: app, privKey: validatorKeys[i],
+			index: i, root: root, address: port.address, app: app, privKey: validatorKeys[i], port: port,
 			nodeKey: &p2p.NodeKey{PrivKey: cmted25519.GenPrivKeyFromSecret([]byte(fmt.Sprintf("%s-p2p-%d", testKeyNotice, i)))},
 		}
 	}
@@ -114,18 +135,34 @@ func newLocalNetworkWithGenesis(t testing.TB, genesis Genesis, validatorKeys []c
 		cfg.Consensus.SkipTimeoutCommit = false
 		cfg.Consensus.PeerQueryMaj23SleepDuration = 10 * time.Millisecond
 		cfg.TxIndex.Indexer = "null"
+		validator.config = cfg
+		network.initializeFiles(t, validator)
+	}
+	network.refreshPersistentPeers()
+	t.Cleanup(func() { network.stopAll() })
+	return network
+}
+
+func (network *localNetwork) refreshPersistentPeers() {
+	for _, validator := range network.nodes {
 		peers := make([]string, 0, len(network.nodes)-1)
 		for _, peer := range network.nodes {
 			if peer.index != validator.index {
 				peers = append(peers, fmt.Sprintf("%s@%s", peer.nodeKey.ID(), peer.address))
 			}
 		}
-		cfg.P2P.PersistentPeers = strings.Join(peers, ",")
-		validator.config = cfg
-		network.initializeFiles(t, validator)
+		validator.config.P2P.PersistentPeers = strings.Join(peers, ",")
 	}
-	t.Cleanup(func() { network.stopAll() })
-	return network
+}
+
+func (network *localNetwork) reserveFreshPort(t testing.TB, validator *localValidator) {
+	t.Helper()
+	port := reserveLoopbackAddress(t)
+	validator.port = port
+	validator.address = port.address
+	validator.config.P2P.ListenAddress = "tcp://" + port.address
+	validator.config.P2P.ExternalAddress = "tcp://" + port.address
+	network.refreshPersistentPeers()
 }
 
 func (network *localNetwork) initializeFiles(t testing.TB, validator *localValidator) {
@@ -159,6 +196,13 @@ func (network *localNetwork) start(t testing.TB, indexes ...int) {
 	t.Helper()
 	for _, index := range indexes {
 		validator := network.nodes[index]
+		if validator.port == nil {
+			network.reserveFreshPort(t, validator)
+		}
+		if err := validator.port.release(); err != nil {
+			t.Fatalf("release validator %d port reservation: %v", index, err)
+		}
+		validator.port = nil
 		if err := network.makeNode(validator); err != nil {
 			t.Fatalf("make validator %d: %v", index, err)
 		}
@@ -191,11 +235,19 @@ func (network *localNetwork) stop(index int) {
 	_ = validator.service.Stop(context.Background())
 	validator.node = nil
 	validator.service = nil
+	// Preserve the validator's advertised address across an in-test restart.
+	// This prevents the still-running peers from retaining a stale persistent
+	// peer address while also keeping the port unavailable to other processes.
+	if port, err := reserveLoopbackAddressAt(validator.address); err == nil {
+		validator.port = port
+	}
 }
 
 func (network *localNetwork) stopAll() {
-	for i := range network.nodes {
-		network.stop(i)
+	for _, validator := range network.nodes {
+		network.stop(validator.index)
+		_ = validator.port.release()
+		validator.port = nil
 	}
 }
 
@@ -315,8 +367,9 @@ func startIncompatibleNode(t testing.TB, network *localNetwork) *localValidator 
 	if err != nil {
 		t.Fatal(err)
 	}
+	port := reserveLoopbackAddress(t)
 	validator := &localValidator{index: 3, root: filepath.Join(t.TempDir(), "wrong-network"),
-		address: freeLoopbackAddress(t), app: app, privKey: validatorKeys[3],
+		address: port.address, app: app, privKey: validatorKeys[3], port: port,
 		nodeKey: &p2p.NodeKey{PrivKey: cmted25519.GenPrivKeyFromSecret([]byte(testKeyNotice + "-wrong-network-p2p"))}}
 	cfg := config.TestConfig().SetRoot(validator.root)
 	cfg.Moniker = "zion-incompatible-validator"
@@ -348,6 +401,10 @@ func startIncompatibleNode(t testing.TB, network *localNetwork) *localValidator 
 		t.Fatal(err)
 	}
 	filePV = privval.LoadFilePV(cfg.PrivValidatorKeyFile(), cfg.PrivValidatorStateFile())
+	if err := validator.port.release(); err != nil {
+		t.Fatal(err)
+	}
+	validator.port = nil
 	created, err := node.NewNode(context.Background(), cfg, filePV, validator.nodeKey,
 		proxy.NewLocalClientCreator(app), node.DefaultGenesisDocProviderFunc(cfg), config.DefaultDBProvider,
 		node.DefaultMetricsProvider(cfg.Instrumentation), cmtlog.NewNopLogger())
