@@ -15,6 +15,7 @@ import (
 	"github.com/kokora3/zion/internal/governance"
 	"github.com/kokora3/zion/internal/identity"
 	"github.com/kokora3/zion/internal/membership"
+	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/p2p"
 	"github.com/kokora3/zion/internal/protocol"
 )
@@ -70,6 +71,9 @@ type Config struct {
 	RecentTransactions        int
 	MaxRelayHandlers          int
 	MaxSyncHandlers           int
+	ObjectDirectory           string
+	ObjectQuotaBytes          uint64
+	ObjectFetch               objects.FetchConfig
 }
 
 func DefaultConfig(dataDir string, genesisID protocol.HashDigest, initial chain.State) Config {
@@ -77,7 +81,9 @@ func DefaultConfig(dataDir string, genesisID protocol.HashDigest, initial chain.
 		StatePath: filepath.Join(dataDir, "state", "application.snapshot"), InitialState: initial,
 		P2P: p2p.DefaultConfig(dataDir, genesisID), API: api.DefaultConfig(), ShutdownTimeout: 10 * time.Second,
 		SyncInterval: 5 * time.Second, SyncTimeout: 10 * time.Second,
-		RecentTransactions: 1024, MaxRelayHandlers: 16, MaxSyncHandlers: 4}
+		RecentTransactions: 1024, MaxRelayHandlers: 16, MaxSyncHandlers: 4,
+		ObjectDirectory: filepath.Join(dataDir, "objects"), ObjectQuotaBytes: objects.DefaultQuotaBytes,
+		ObjectFetch: objects.DefaultFetchConfig()}
 }
 
 type TransactionRecord struct {
@@ -99,6 +105,8 @@ type Runtime struct {
 	store     *StateStore
 	consensus ConsensusService
 	p2p       *p2p.Node
+	objects   *objects.Store
+	fetcher   *objects.Service
 	api       *api.Server
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -115,7 +123,7 @@ func New(cfg Config) (*Runtime, error) {
 		cfg.InitialState.NetworkID != cfg.NetworkID || cfg.ShutdownTimeout <= 0 || cfg.RecentTransactions < 1 ||
 		cfg.SyncInterval < 100*time.Millisecond || cfg.SyncInterval > time.Hour || cfg.SyncTimeout <= 0 || cfg.SyncTimeout > time.Minute ||
 		cfg.RecentTransactions > 10000 || cfg.MaxRelayHandlers < 1 || cfg.MaxRelayHandlers > 128 ||
-		cfg.MaxSyncHandlers < 1 || cfg.MaxSyncHandlers > 16 {
+		cfg.MaxSyncHandlers < 1 || cfg.MaxSyncHandlers > 16 || cfg.ObjectDirectory == "" {
 		return nil, fmt.Errorf("invalid node runtime configuration")
 	}
 	if cfg.P2P.NetworkID != cfg.NetworkID || !equalHash(cfg.P2P.NetworkFingerprint, cfg.GenesisID) {
@@ -133,7 +141,11 @@ func New(cfg Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{cfg: cfg, lifecycle: Created, sync: Uninitialized, store: store,
+	objectStore, err := objects.Open(cfg.ObjectDirectory, cfg.ObjectQuotaBytes)
+	if err != nil {
+		return nil, fmt.Errorf("open object store: %w", err)
+	}
+	return &Runtime{cfg: cfg, lifecycle: Created, sync: Uninitialized, store: store, objects: objectStore,
 		relaySem: make(chan struct{}, cfg.MaxRelayHandlers), syncSem: make(chan struct{}, cfg.MaxSyncHandlers),
 		tx: make(map[string]TransactionRecord)}, nil
 }
@@ -210,6 +222,13 @@ func (r *Runtime) Start(parent context.Context) (err error) {
 	}
 	r.mu.Lock()
 	r.p2p = p2pNode
+	r.mu.Unlock()
+	objectService, err := objects.NewService(runtimeContext, p2pNode, r.objects, r.cfg.NetworkID, r.cfg.ObjectFetch)
+	if err != nil {
+		return fmt.Errorf("start object service: %w", err)
+	}
+	r.mu.Lock()
+	r.fetcher = objectService
 	r.mu.Unlock()
 	r.installStreamHandlers()
 	if service != nil {
@@ -292,7 +311,7 @@ func (r *Runtime) Stop(ctx context.Context) error {
 
 func (r *Runtime) cleanup(ctx context.Context) error {
 	r.mu.Lock()
-	cancel, apiServer, p2pNode := r.cancel, r.api, r.p2p
+	cancel, apiServer, p2pNode, objectService := r.cancel, r.api, r.p2p, r.fetcher
 	r.cancel = nil
 	r.mu.Unlock()
 	if cancel != nil {
@@ -304,6 +323,9 @@ func (r *Runtime) cleanup(ctx context.Context) error {
 		if err := apiServer.Close(ctx); err != nil && first == nil {
 			first = err
 		}
+	}
+	if objectService != nil {
+		objectService.Close()
 	}
 	r.mu.RLock()
 	consensusService := r.consensus
@@ -325,6 +347,9 @@ func (r *Runtime) cleanup(ctx context.Context) error {
 	if r.p2p == p2pNode {
 		r.p2p = nil
 	}
+	if r.fetcher == objectService {
+		r.fetcher = nil
+	}
 	if r.consensus == consensusService {
 		r.consensus = nil
 	}
@@ -341,6 +366,20 @@ func (r *Runtime) APIAddress() string {
 	return r.api.Addr()
 }
 func (r *Runtime) P2P() *p2p.Node { r.mu.RLock(); defer r.mu.RUnlock(); return r.p2p }
+
+// ObjectStore exposes the internal Phase 9A store to later local API wiring.
+func (r *Runtime) ObjectStore() *objects.Store { return r.objects }
+
+// FetchObject performs bounded direct retrieval over the existing P2P host.
+func (r *Runtime) FetchObject(ctx context.Context, id protocol.ObjectID) (objects.Object, error) {
+	r.mu.RLock()
+	fetcher := r.fetcher
+	r.mu.RUnlock()
+	if fetcher == nil {
+		return objects.Object{}, fmt.Errorf("object service is not running")
+	}
+	return fetcher.FetchObject(ctx, id)
+}
 
 func (r *Runtime) Commit(raw []byte, height int64) (chain.Receipt, error) {
 	r.mu.Lock()
