@@ -1,4 +1,0 @@
-./colorlogger.go
-./colorwriter_windows.go
-./term.go
-./terminal_windows.go

@@ -1,5 +1,0 @@
-./connwithscope.go
-./demultiplex.go
-./dialer.go
-./listener.go
-./reuseport.go

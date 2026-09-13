@@ -1,4 +1,0 @@
-./options.go
-./query.go
-./query_serde.go
-./routing.go

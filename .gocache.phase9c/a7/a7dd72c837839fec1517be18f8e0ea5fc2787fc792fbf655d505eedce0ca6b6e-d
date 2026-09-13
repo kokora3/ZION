@@ -1,6 +1,0 @@
-./filter.go
-./holepuncher.go
-./metrics.go
-./svc.go
-./tracer.go
-./util.go

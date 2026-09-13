@@ -1,9 +1,0 @@
-./autonat.go
-./client.go
-./dialpolicy.go
-./interface.go
-./metrics.go
-./notify.go
-./options.go
-./proto.go
-./svc.go

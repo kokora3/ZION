@@ -1,8 +1,0 @@
-./doc.go
-./object.go
-./service.go
-./store.go
-./wire.go
-./service_test.go
-./store_test.go
-./wire_test.go

@@ -1,4 +1,0 @@
-./app.go
-./log_abci.go
-./snapshots.go
-./state.go
