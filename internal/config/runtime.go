@@ -26,6 +26,7 @@ type File struct {
 	Roles         []p2p.Role `yaml:"roles"`
 	P2P           P2P        `yaml:"p2p"`
 	API           API        `yaml:"api"`
+	Objects       Objects    `yaml:"objects"`
 	Consensus     Consensus  `yaml:"consensus"`
 }
 
@@ -49,6 +50,12 @@ type API struct {
 	Listen          string   `yaml:"listen"`
 	AllowedOrigins  []string `yaml:"allowed_origins"`
 	BearerTokenFile string   `yaml:"bearer_token_file"`
+}
+
+// Objects is local operational configuration and never canonical chain state.
+type Objects struct {
+	Directory  string `yaml:"directory"`
+	QuotaBytes uint64 `yaml:"quota_bytes"`
 }
 
 type Consensus struct {
@@ -132,6 +139,12 @@ func (f File) RuntimeConfig() (node.Config, error) {
 	}
 	if f.API.Listen != "" {
 		cfg.API.Listen = f.API.Listen
+	}
+	if f.Objects.Directory != "" {
+		cfg.ObjectDirectory = f.Objects.Directory
+	}
+	if f.Objects.QuotaBytes != 0 {
+		cfg.ObjectQuotaBytes = f.Objects.QuotaBytes
 	}
 	cfg.API.AllowedOrigins = append([]string(nil), f.API.AllowedOrigins...)
 	if f.API.BearerTokenFile != "" {

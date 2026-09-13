@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/base64"
@@ -13,6 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kokora3/zion/internal/objects"
+	"github.com/kokora3/zion/internal/protocol"
 )
 
 const (
@@ -23,6 +27,9 @@ const (
 	DefaultConcurrency = 32
 	HardMaxConcurrency = 128
 	MaxPageSize        = 100
+	// MaxObjectBody allows one base64-encoded MaxObjectBytes object plus a
+	// small, fixed JSON envelope. Transaction body limits remain unchanged.
+	MaxObjectBody = ((objects.MaxObjectBytes + 2) / 3 * 4) + 1024
 )
 
 type Error struct {
@@ -46,6 +53,10 @@ type Backend interface {
 	Proposal(string) (any, bool, error)
 	SubmitTransaction(context.Context, []byte) (Submission, error)
 	Transaction(string) (any, bool, error)
+	PutObject(context.Context, objects.Object) (protocol.ObjectID, objects.PutResult, error)
+	GetObject(context.Context, protocol.ObjectID) (objects.Object, error)
+	StatObject(context.Context, protocol.ObjectID) (objects.Metadata, error)
+	FetchObject(context.Context, protocol.ObjectID) (objects.Object, error)
 }
 
 type Config struct {
@@ -187,6 +198,10 @@ func (s *Server) route(writer http.ResponseWriter, request *http.Request) {
 			s.writeJSON(writer, http.StatusOK, value)
 			return
 		}
+		if strings.HasPrefix(path, BasePath+"/objects/") {
+			s.getObject(writer, request)
+			return
+		}
 		for _, route := range []struct {
 			prefix string
 			get    func(string) (any, bool, error)
@@ -218,11 +233,190 @@ func (s *Server) route(writer http.ResponseWriter, request *http.Request) {
 		s.submit(writer, request)
 		return
 	}
+	if path == BasePath+"/objects" && request.Method == http.MethodPost {
+		s.putObject(writer, request)
+		return
+	}
+	if request.Method == http.MethodPost && strings.HasPrefix(path, BasePath+"/objects/") && strings.HasSuffix(path, "/fetch") {
+		s.fetchObject(writer, request)
+		return
+	}
 	if strings.HasPrefix(path, BasePath+"/") {
 		s.writeError(writer, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not supported")
 		return
 	}
 	s.writeError(writer, http.StatusNotFound, "NOT_FOUND", "endpoint not found")
+}
+
+func (s *Server) putObject(writer http.ResponseWriter, request *http.Request) {
+	data, ok := s.readObjectBody(writer, request)
+	if !ok {
+		return
+	}
+	var wrapper struct {
+		Encoding string `json:"encoding"`
+		Object   string `json:"object"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wrapper); err != nil || wrapper.Encoding != "base64" || wrapper.Object == "" {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_OBJECT", "expected one base64 object wrapper")
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_OBJECT", "trailing request data")
+		return
+	}
+	if len(wrapper.Object) > base64.StdEncoding.EncodedLen(objects.MaxObjectBytes) {
+		s.writeError(writer, http.StatusRequestEntityTooLarge, "OBJECT_TOO_LARGE", "object exceeds hard size limit")
+		return
+	}
+	raw, err := base64.StdEncoding.DecodeString(wrapper.Object)
+	if err != nil {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_OBJECT", "invalid base64 object")
+		return
+	}
+	object, err := objects.Decode(raw)
+	if err != nil {
+		s.writeObjectError(writer, err)
+		return
+	}
+	id, result, err := s.backend.PutObject(request.Context(), object)
+	if err != nil {
+		s.writeObjectError(writer, err)
+		return
+	}
+	status := http.StatusCreated
+	if result == objects.PutAlreadyExists {
+		status = http.StatusOK
+	}
+	s.writeJSON(writer, status, map[string]any{"object_id": id.String(), "size": len(raw), "status": result})
+}
+
+func (s *Server) getObject(writer http.ResponseWriter, request *http.Request) {
+	id, meta, ok := parseObjectPath(request.URL.Path, "")
+	if !ok {
+		id, meta, ok = parseObjectPath(request.URL.Path, "/meta")
+	}
+	if !ok {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_OBJECT_ID", "invalid object path")
+		return
+	}
+	if meta {
+		value, err := s.backend.StatObject(request.Context(), id)
+		if err != nil {
+			s.writeObjectError(writer, err)
+			return
+		}
+		s.writeJSON(writer, http.StatusOK, map[string]any{"object_id": value.ObjectID.String(), "size": value.Size,
+			"present": true, "stored_at": value.StoredAt.UTC().Format(time.RFC3339Nano)})
+		return
+	}
+	object, err := s.backend.GetObject(request.Context(), id)
+	if err != nil {
+		s.writeObjectError(writer, err)
+		return
+	}
+	raw, err := object.CanonicalBytes()
+	if err != nil {
+		s.writeObjectError(writer, err)
+		return
+	}
+	s.writeJSON(writer, http.StatusOK, map[string]any{"encoding": "base64", "object": base64.StdEncoding.EncodeToString(raw),
+		"object_id": id.String(), "size": len(raw)})
+}
+
+func (s *Server) fetchObject(writer http.ResponseWriter, request *http.Request) {
+	id, _, ok := parseObjectPath(request.URL.Path, "/fetch")
+	if !ok {
+		s.writeError(writer, http.StatusBadRequest, "INVALID_OBJECT_ID", "invalid ObjectID")
+		return
+	}
+	if _, err := s.backend.GetObject(request.Context(), id); err == nil {
+		meta, statErr := s.backend.StatObject(request.Context(), id)
+		if statErr != nil {
+			s.writeObjectError(writer, statErr)
+			return
+		}
+		s.writeJSON(writer, http.StatusOK, map[string]any{"object_id": id.String(), "size": meta.Size, "status": "ALREADY_LOCAL"})
+		return
+	} else if !errors.Is(err, objects.ErrObjectNotFound) {
+		s.writeObjectError(writer, err)
+		return
+	}
+	object, err := s.backend.FetchObject(request.Context(), id)
+	if err != nil {
+		s.writeObjectError(writer, err)
+		return
+	}
+	raw, err := object.CanonicalBytes()
+	if err != nil {
+		s.writeObjectError(writer, err)
+		return
+	}
+	actualID, err := object.ObjectID()
+	if err != nil || actualID.String() != id.String() {
+		s.writeObjectError(writer, objects.ErrInvalidRemoteResponse)
+		return
+	}
+	s.writeJSON(writer, http.StatusOK, map[string]any{"object_id": id.String(), "size": len(raw), "status": "FETCHED"})
+}
+
+func parseObjectPath(path, suffix string) (protocol.ObjectID, bool, bool) {
+	prefix := BasePath + "/objects/"
+	if !strings.HasPrefix(path, prefix) {
+		return protocol.ObjectID{}, false, false
+	}
+	value := strings.TrimPrefix(path, prefix)
+	meta := suffix == "/meta"
+	if suffix != "" {
+		if !strings.HasSuffix(value, suffix) {
+			return protocol.ObjectID{}, false, false
+		}
+		value = strings.TrimSuffix(value, suffix)
+	} else if strings.Contains(value, "/") {
+		return protocol.ObjectID{}, false, false
+	}
+	if value == "" || strings.Contains(value, "/") {
+		return protocol.ObjectID{}, false, false
+	}
+	id, err := protocol.ParseObjectID(value)
+	if err != nil {
+		return protocol.ObjectID{}, false, false
+	}
+	return id, meta, true
+}
+
+func (s *Server) readObjectBody(writer http.ResponseWriter, request *http.Request) ([]byte, bool) {
+	data, err := io.ReadAll(io.LimitReader(request.Body, MaxObjectBody+1))
+	if err != nil || len(data) > MaxObjectBody {
+		s.writeError(writer, http.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "request body exceeds object API limit")
+		return nil, false
+	}
+	return data, true
+}
+
+func (s *Server) writeObjectError(writer http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, objects.ErrObjectNotFound):
+		s.writeError(writer, http.StatusNotFound, "OBJECT_NOT_FOUND", "object not found")
+	case errors.Is(err, objects.ErrObjectCorrupt):
+		s.writeError(writer, http.StatusInternalServerError, "OBJECT_CORRUPT", "stored object failed integrity verification")
+	case errors.Is(err, objects.ErrStoreFull):
+		s.writeError(writer, http.StatusInsufficientStorage, "OBJECT_STORE_FULL", "local object-store quota exceeded")
+	case errors.Is(err, objects.ErrObjectTooLarge):
+		s.writeError(writer, http.StatusRequestEntityTooLarge, "OBJECT_TOO_LARGE", "object exceeds hard size limit")
+	case errors.Is(err, objects.ErrInvalidObject):
+		s.writeError(writer, http.StatusUnprocessableEntity, "INVALID_OBJECT", "object is malformed or non-canonical")
+	case errors.Is(err, objects.ErrObjectFetchTimeout), errors.Is(err, context.DeadlineExceeded):
+		s.writeError(writer, http.StatusGatewayTimeout, "OBJECT_FETCH_TIMEOUT", "object fetch timed out")
+	case errors.Is(err, objects.ErrNoAvailablePeers):
+		s.writeError(writer, http.StatusServiceUnavailable, "NO_OBJECT_PEERS", "no compatible object peers are available")
+	case errors.Is(err, objects.ErrInvalidRemoteResponse):
+		s.writeError(writer, http.StatusBadGateway, "INVALID_REMOTE_OBJECT", "remote object response failed validation")
+	default:
+		s.writeError(writer, http.StatusInternalServerError, "OBJECT_STORE_ERROR", "object operation failed")
+	}
 }
 
 func (s *Server) submit(writer http.ResponseWriter, request *http.Request) {

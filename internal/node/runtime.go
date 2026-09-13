@@ -370,6 +370,21 @@ func (r *Runtime) P2P() *p2p.Node { r.mu.RLock(); defer r.mu.RUnlock(); return r
 // ObjectStore exposes the internal Phase 9A store to later local API wiring.
 func (r *Runtime) ObjectStore() *objects.Store { return r.objects }
 
+// PutObject stores a validated canonical object in local non-consensus state.
+func (r *Runtime) PutObject(ctx context.Context, object objects.Object) (protocol.ObjectID, objects.PutResult, error) {
+	return r.objects.Put(ctx, object)
+}
+
+// GetObject reads and verifies one local object. It never performs networking.
+func (r *Runtime) GetObject(ctx context.Context, id protocol.ObjectID) (objects.Object, error) {
+	return r.objects.Get(ctx, id)
+}
+
+// StatObject reports verified local metadata without exposing filesystem paths.
+func (r *Runtime) StatObject(ctx context.Context, id protocol.ObjectID) (objects.Metadata, error) {
+	return r.objects.Stat(ctx, id)
+}
+
 // FetchObject performs bounded direct retrieval over the existing P2P host.
 func (r *Runtime) FetchObject(ctx context.Context, id protocol.ObjectID) (objects.Object, error) {
 	r.mu.RLock()
@@ -473,11 +488,13 @@ func (r *Runtime) Status() any {
 		peerID = r.p2p.PeerID().String()
 	}
 	consensusActive := r.consensus != nil && r.consensus.Active()
+	objectCount, objectBytes, objectQuota := r.objects.Usage()
 	return map[string]any{"network_id": r.cfg.NetworkID, "genesis_id": hex.EncodeToString(r.cfg.GenesisID.Digest),
 		"runtime_state": r.lifecycle, "roles": append([]p2p.Role(nil), r.cfg.P2P.Roles...), "peer_id": peerID,
 		"sync_status": r.sync, "accepted_height": r.height, "state_hash": hash.String(),
 		"consensus_active": consensusActive, "validator_authorized": r.validatorAuthorized(r.state),
-		"protocol_version": protocol.CurrentProtocolVersion}
+		"protocol_version": protocol.CurrentProtocolVersion, "object_store_enabled": true,
+		"object_count": objectCount, "object_bytes": objectBytes, "object_quota_bytes": objectQuota}
 }
 
 func (r *Runtime) Peers() any {

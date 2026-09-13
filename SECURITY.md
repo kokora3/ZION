@@ -71,3 +71,17 @@ Application snapshots store exact canonical state bytes in a separate versioned 
 Normal-node state sync authenticates the transport peer and verifies network, GenesisID, canonical encoding, height, and StateHash before atomic persistence and in-memory promotion. It rejects rollback and equal-height conflicts and never overwrites an active validator from general P2P. This alpha mechanism is not a Byzantine-safe light client: a hash-valid snapshot plus authenticated peer does not independently prove consensus finality.
 
 State-sync frames, relay frames, API bodies, concurrent handlers, recent transaction records, sync/relay handlers, timeouts, and shutdown are bounded. Runtime lifecycle cancellation cleans up partial startup. Operational height, sync status, API settings, transaction cache, and filesystem metadata never enter canonical StateHash.
+
+## Phase 9 object-store and retrieval boundaries
+
+Phase 9 reuses the frozen Phase 2 ObjectID. An ObjectID is derived from the canonical public object core and is distinct from the payload ContentHash; it is never derived from a filename, filesystem path, peer, or storage location. Stored canonical bytes are immutable. Digest-sharded paths use only a validated SHA-256 algorithm and lowercase digest, and temporary writes are bounded, owner-only where supported, flushed, and atomically renamed. Duplicate content is verified rather than overwritten. Corrupt, truncated, misplaced, malformed, non-canonical, or oversized content fails closed.
+
+The zion-alpha-1 hard limit is 1 MiB for a complete canonical object. The local quota, object count, concurrent requests, P2P candidates, per-peer handlers, frames, deadlines, and API upload envelope are bounded. A full store rejects new content without automatic eviction and keeps existing valid objects readable. These controls reduce resource-exhaustion risk but do not establish a production capacity guarantee.
+
+Object files, paths, quota, timestamps, cache state, peer choices, availability, and fetch failures are local operational state. They never enter canonical snapshots, membership, governance, validator authorization, transactions, `StateHash`, or `AppHash`. A corrupt store or failed fetch cannot authorize or mutate chain state.
+
+The `/zion/object/0.1.0` protocol runs only over authenticated, compatible Phase 7 peers. PEX and remote availability are untrusted hints. Every `FOUND` response is canonically decoded, checked against declared size and ContentHash, and recomputed against the requested ObjectID before storage. Wrong-network, mismatched-ID, non-canonical, malformed, oversized, timed-out, and unsolicited responses are rejected without partial installation.
+
+The local API accepts object bytes, never a server filesystem path. It preserves loopback defaults, bearer authentication for non-loopback binding, exact-origin CORS, bounded concurrency, and timeouts. Responses omit storage paths, credentials, private keys, and raw internal errors. The CLI validates downloaded bytes before writing and refuses accidental overwrite unless `--force` is explicit.
+
+Content addressing proves byte integrity relative to an identifier; it does not prove authorship, endorsement, safety, availability, or permanence. The current `LOCAL` visibility label is metadata, not encryption or access control. Phase 9 provides no confidentiality, DHT, chunking, automated replication, garbage collection, or permanent-storage guarantee.

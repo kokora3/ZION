@@ -25,6 +25,10 @@ api:
   listen: 127.0.0.1:42001
   allowed_origins: []
   bearer_token_file: "" # Required by the implementation for non-loopback binding.
+objects:
+  # Local off-chain storage. Neither this path nor quota enters StateHash/AppHash.
+  directory: <data-directory>/objects
+  quota_bytes: 1073741824 # 1 GiB; each canonical object is hard-limited to 1 MiB.
 consensus:
   # Set enabled: true together with a VALIDATOR role. The root must already
   # contain the matching CometBFT genesis, private-validator, and node-key files.

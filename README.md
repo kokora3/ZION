@@ -6,7 +6,9 @@ Current network: `zion-alpha-1`. This is alpha software, not mainnet: history ma
 
 ZION Protocol v0.1 is a Minimum Decentralized Product: enough independent-node infrastructure to prove that people can discuss and curate AI-security knowledge without a mandatory central application database. The Go Native ZION Node is the v0.1 reference implementation. `SPEC.md` is the implementation source of truth.
 
-This repository includes the Phase 1 architecture, Phase 2 canonical protocol primitives, Phase 3 identity and membership primitives, the Phase 4 deterministic chain state machine, the Phase 5 CometBFT consensus adapter, and Phase 6 minimal governance. ZION retains its native transaction, identity, membership, state, and hash semantics; CometBFT v1.0.1 supplies permissioned validator ordering and finality. The integration harness covers four-validator finality, governance membership execution, and governance-authorized validator ADD/REMOVE updates. General ZION P2P, durable application persistence, registries, and automated software migration remain deferred.
+This repository implements Phases 1–9: canonical protocol and identity primitives, deterministic chain state, CometBFT finality, minimal governance, authenticated general libp2p discovery, a unified durable node runtime and local API, and a small content-addressed object store with bounded direct peer retrieval. ZION retains its native transaction, identity, membership, state, and hash semantics; CometBFT v1.0.1 supplies permissioned validator ordering and finality.
+
+Phase 9 stores complete canonical objects up to 1 MiB, reuses the frozen Phase 2 ObjectID, verifies content on every read and remote fetch, and keeps availability strictly outside StateHash/AppHash. It is a best-effort local/off-chain facility—not permanent distributed storage, a DHT, confidentiality layer, large-file system, or registry. Board, Research Registry, Resource Registry, replication/GC, and automated software migration remain deferred.
 
 ## Development
 

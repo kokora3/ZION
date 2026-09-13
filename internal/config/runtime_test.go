@@ -19,10 +19,14 @@ import (
 func TestRuntimeConfigNormalAndValidatorComposition(t *testing.T) {
 	fingerprint := protocol.HashBytes([]byte("phase-8-config-normal"))
 	normal := File{NetworkID: string(protocol.Alpha1NetworkID), GenesisID: hex.EncodeToString(fingerprint.Digest),
-		DataDirectory: t.TempDir(), Roles: []p2p.Role{p2p.RoleNormal}}
+		DataDirectory: t.TempDir(), Roles: []p2p.Role{p2p.RoleNormal},
+		Objects: Objects{Directory: filepath.Join(t.TempDir(), "object-store"), QuotaBytes: 8 << 20}}
 	normalConfig, err := normal.RuntimeConfig()
 	if err != nil || normalConfig.ConsensusFactory != nil || normalConfig.FreshStateIsAuthoritative {
 		t.Fatalf("normal runtime config: %v", err)
+	}
+	if normalConfig.ObjectDirectory != normal.Objects.Directory || normalConfig.ObjectQuotaBytes != normal.Objects.QuotaBytes {
+		t.Fatal("local object-store configuration was not applied")
 	}
 
 	root := filepath.Join(t.TempDir(), "consensus")
