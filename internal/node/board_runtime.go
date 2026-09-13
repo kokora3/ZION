@@ -58,6 +58,10 @@ func (r *Runtime) admitBoardEvent(ctx context.Context, raw []byte, local bool) (
 	if local && authorization != board.CurrentlyAuthorized {
 		return index.BoardEntry{}, false, board.ErrPublicationDenied
 	}
+	unresolved := r.unresolvedBoardReferences(event.Body.References)
+	if local && len(unresolved) != 0 {
+		return index.BoardEntry{}, false, board.ErrReferenceNotFound
+	}
 	if local && event.Body.Kind == board.KindReply {
 		if _, found := r.boardIndex.Get(event.Body.ParentPost); !found {
 			return index.BoardEntry{}, false, board.ErrParentNotFound
@@ -77,7 +81,8 @@ func (r *Runtime) admitBoardEvent(ctx context.Context, raw []byte, local bool) (
 	entry := index.BoardEntry{PostID: postID.String(), Kind: event.Body.Kind, AuthorIdentity: event.Body.AuthorIdentity.String(),
 		AuthorKeyID: event.Body.AuthorKeyID.String(), CreatedAt: int64(event.Body.CreatedAt), ParentPost: event.Body.ParentPost,
 		ContentObject: event.Body.ContentObject, References: append([]board.Reference(nil), event.Body.References...),
-		ContentPresent: contentPresent, SignatureStatus: "SIGNATURE_VALID", AuthorizationStatus: authorization,
+		UnresolvedReferences: unresolved,
+		ContentPresent:       contentPresent, SignatureStatus: "SIGNATURE_VALID", AuthorizationStatus: authorization,
 		CurrentMembership: currentMembership, LocalVisibility: "VISIBLE", Title: content.Title, Body: content.Body}
 	added, err := r.boardIndex.Add(entry)
 	if err != nil {
@@ -241,7 +246,27 @@ func (r *Runtime) decorateBoardEntry(ctx context.Context, entry index.BoardEntry
 	if err == nil {
 		entry.AuthorizationStatus, entry.CurrentMembership = authorization, status
 	}
+	entry.UnresolvedReferences = r.unresolvedBoardReferences(entry.References)
 	return entry
+}
+
+func (r *Runtime) unresolvedBoardReferences(references []board.Reference) []board.Reference {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := []board.Reference{}
+	for _, reference := range references {
+		switch reference.TargetKind {
+		case "RESEARCH":
+			if _, exists := r.state.Research[reference.TargetID]; !exists {
+				result = append(result, reference)
+			}
+		case "RESOURCE":
+			if _, exists := r.state.Resources[reference.TargetID]; !exists {
+				result = append(result, reference)
+			}
+		}
+	}
+	return result
 }
 
 func (r *Runtime) SyncBoard(ctx context.Context) error {

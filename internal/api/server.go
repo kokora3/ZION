@@ -20,6 +20,8 @@ import (
 	"github.com/kokora3/zion/internal/index"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/protocol"
+	"github.com/kokora3/zion/internal/research"
+	"github.com/kokora3/zion/internal/resources"
 )
 
 const (
@@ -66,6 +68,12 @@ type Backend interface {
 	BoardReplies(postID string, offset, limit int) (any, error)
 	BoardSearch(query string, offset, limit int) (any, error)
 	SetBoardHidden(string, bool) error
+	ResearchList(offset, limit int) (any, error)
+	Research(string) (any, bool, error)
+	ResearchSearch(query string, offset, limit int) (any, error)
+	ResourceList(offset, limit int) (any, error)
+	Resource(string) (any, bool, error)
+	ResourceSearch(query string, offset, limit int) (any, error)
 }
 
 type Config struct {
@@ -232,6 +240,69 @@ func (s *Server) route(writer http.ResponseWriter, request *http.Request) {
 			}
 			s.writeJSON(writer, http.StatusOK, value)
 			return
+		case BasePath + "/research", BasePath + "/resources":
+			offset, limit, err := pagination(request)
+			if err != nil {
+				s.writeError(writer, http.StatusBadRequest, "INVALID_PAGINATION", err.Error())
+				return
+			}
+			var value any
+			if path == BasePath+"/research" {
+				value, err = s.backend.ResearchList(offset, limit)
+			} else {
+				value, err = s.backend.ResourceList(offset, limit)
+			}
+			if err != nil {
+				s.writeError(writer, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+				return
+			}
+			s.writeJSON(writer, http.StatusOK, value)
+			return
+		case BasePath + "/research/search", BasePath + "/resources/search":
+			offset, limit, err := pagination(request)
+			if err != nil {
+				s.writeError(writer, http.StatusBadRequest, "INVALID_PAGINATION", err.Error())
+				return
+			}
+			var value any
+			if path == BasePath+"/research/search" {
+				value, err = s.backend.ResearchSearch(request.URL.Query().Get("q"), offset, limit)
+			} else {
+				value, err = s.backend.ResourceSearch(request.URL.Query().Get("q"), offset, limit)
+			}
+			if err != nil {
+				s.writeError(writer, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+				return
+			}
+			s.writeJSON(writer, http.StatusOK, value)
+			return
+		}
+		for _, route := range []struct {
+			prefix string
+			parse  func(string) error
+			get    func(string) (any, bool, error)
+		}{
+			{BasePath + "/research/", func(value string) error { _, err := research.ParseID(value); return err }, s.backend.Research},
+			{BasePath + "/resources/", func(value string) error { _, err := resources.ParseID(value); return err }, s.backend.Resource},
+		} {
+			if strings.HasPrefix(path, route.prefix) {
+				id := strings.TrimPrefix(path, route.prefix)
+				if id == "" || strings.Contains(id, "/") || route.parse(id) != nil {
+					s.writeError(writer, http.StatusBadRequest, "INVALID_ID", "invalid registry ID")
+					return
+				}
+				value, found, err := route.get(id)
+				if err != nil {
+					s.writeError(writer, http.StatusBadRequest, "INVALID_ID", err.Error())
+					return
+				}
+				if !found {
+					s.writeError(writer, http.StatusNotFound, "NOT_FOUND", "registry entry not found")
+					return
+				}
+				s.writeJSON(writer, http.StatusOK, value)
+				return
+			}
 		}
 		if strings.HasPrefix(path, BasePath+"/board/posts/") {
 			s.getBoardPost(writer, request)
@@ -410,6 +481,8 @@ func (s *Server) writeBoardError(writer http.ResponseWriter, err error) {
 		s.writeError(writer, http.StatusUnprocessableEntity, "BOARD_PARENT_NOT_FOUND", "reply parent is not available locally")
 	case errors.Is(err, board.ErrBoardContentMissing):
 		s.writeError(writer, http.StatusUnprocessableEntity, "BOARD_CONTENT_MISSING", "primary Board content is not available locally")
+	case errors.Is(err, board.ErrReferenceNotFound):
+		s.writeError(writer, http.StatusUnprocessableEntity, "BOARD_REFERENCE_NOT_FOUND", "canonical registry reference is not admitted")
 	case errors.Is(err, board.ErrInvalidContent):
 		s.writeError(writer, http.StatusUnprocessableEntity, "INVALID_BOARD_CONTENT", "Board content is invalid")
 	case errors.Is(err, board.ErrInvalidEvent):

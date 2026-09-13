@@ -1,0 +1,17 @@
+{
+  "canonical_cbor_hex": "a70101026d5a494f4e20526573656172636803782044657465726d696e6973746963207265736561726368206d657461646174612e0481a10165416c696365058007800880",
+  "logical": {
+    "schema_version": 1,
+    "title": "ZION Research",
+    "summary": "Deterministic research metadata.",
+    "contributors": [
+      {
+        "display_name": "Alice"
+      }
+    ],
+    "external_identifiers": [],
+    "object_refs": [],
+    "canonical_refs": []
+  },
+  "research_id": "zion:research:sha256:46dae524644371e66be2c1cfcfd0c0aa4ee9da2a23ce64ac8f4455799fd90437"
+}

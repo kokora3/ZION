@@ -10,6 +10,8 @@ import (
 	"github.com/kokora3/zion/internal/identity"
 	"github.com/kokora3/zion/internal/membership"
 	"github.com/kokora3/zion/internal/protocol"
+	"github.com/kokora3/zion/internal/research"
+	"github.com/kokora3/zion/internal/resources"
 )
 
 const (
@@ -195,6 +197,8 @@ type ProposalBody struct {
 	ValidatorSet  *ValidatorSetChangePayload `cbor:"7,keyasint,omitempty"`
 	Upgrade       *ProtocolUpgradePayload    `cbor:"8,keyasint,omitempty"`
 	Migration     *MigrationPayload          `cbor:"9,keyasint,omitempty"`
+	Research      *research.EntryBody        `cbor:"10,keyasint,omitempty"`
+	Resource      *resources.EntryBody       `cbor:"11,keyasint,omitempty"`
 }
 
 func (body ProposalBody) ID() (ProposalID, error) {
@@ -225,6 +229,12 @@ func (body ProposalBody) Validate() error {
 	if body.Migration != nil {
 		selected++
 	}
+	if body.Research != nil {
+		selected++
+	}
+	if body.Resource != nil {
+		selected++
+	}
 	if selected != 1 {
 		return fmt.Errorf("proposal must contain exactly one payload")
 	}
@@ -251,8 +261,14 @@ func (body ProposalBody) Validate() error {
 		if body.Migration == nil || body.Migration.TargetNetwork == "" || body.Migration.TargetVersion == "" || body.Migration.MigrationIdentifier == "" {
 			return fmt.Errorf("invalid migration payload")
 		}
-	case ResearchAdmission, ResourceAdmission:
-		return fmt.Errorf("registry governance execution is deferred")
+	case ResearchAdmission:
+		if body.Research == nil || body.Research.Validate() != nil {
+			return fmt.Errorf("invalid research admission payload")
+		}
+	case ResourceAdmission:
+		if body.Resource == nil || body.Resource.Validate() != nil {
+			return fmt.Errorf("invalid resource admission payload")
+		}
 	default:
 		return fmt.Errorf("unknown proposal kind")
 	}
@@ -444,6 +460,14 @@ func CloneProposalBody(body ProposalBody) ProposalBody {
 	if body.Migration != nil {
 		payload := *body.Migration
 		clone.Migration = &payload
+	}
+	if body.Research != nil {
+		payload := research.CloneBody(*body.Research)
+		clone.Research = &payload
+	}
+	if body.Resource != nil {
+		payload := resources.CloneBody(*body.Resource)
+		clone.Resource = &payload
 	}
 	return clone
 }

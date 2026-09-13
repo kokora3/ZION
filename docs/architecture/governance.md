@@ -30,7 +30,7 @@ A membership proposal states target, expected status, and requested status. Exec
 
 A validator proposal states ADD or REMOVE, an explicit operator IdentityID, a distinct Ed25519 consensus public key, equal power 1, and the expected validator-set hash. The operator must be ACTIVE at execution. Removal cannot take the set below three validators. Successful execution emits the deterministic ABCI validator update; local files or configuration never authorize it. CometBFT v1.0.1 applies an update returned while finalizing height H to the validator set effective at H+2 and performs its own BFT quorum calculation.
 
-Protocol-upgrade and migration proposals canonically record decisions. They do not download or hot-swap software, nor perform Phase 13 export/import. RESEARCH_ADMISSION and RESOURCE_ADMISSION names are reserved, but executable submissions are rejected until their later registry handlers exist.
+Protocol-upgrade and migration proposals canonically record decisions. They do not download or hot-swap software, nor perform Phase 13 export/import. Phase 11 activates `RESEARCH_ADMISSION` and `RESOURCE_ADMISSION`; their approved execution inserts one immutable bounded entry into StateSchemaV3 after deterministic revalidation.
 
 ## Canonical state and limits
 

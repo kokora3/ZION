@@ -65,3 +65,7 @@ Direct MembershipChange remains deterministically rejected. PENDING, ACTIVE, SUS
 ## Deterministic resource bound
 
 The maximum canonical transaction size is the protocol constant 65,536 bytes. Every validator measures the same canonical bytes before schema, network, type, or payload validation and returns `ERR_TRANSACTION_TOO_LARGE` when the limit is exceeded. It is not derived from RAM, operating system, environment, or per-node configuration. Broader wire-message and queue bounds belong to later networking work.
+
+## Phase 11 registry state
+
+StateSchemaV3 is the explicit deterministic successor to governance StateSchemaV2. It adds ID-sorted immutable Research and Resource entries with governance ProposalID and consensus execution height. Admission is dispatched only by approved `GovernanceExecute`; duplicate IDs and missing canonical Research/Resource targets fail atomically. ObjectID targets are syntax-checked without reading local object bytes. See [registries.md](registries.md).

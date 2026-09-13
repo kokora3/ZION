@@ -29,6 +29,7 @@ const (
 	TransactionSchema protocol.SchemaVersion = 1
 	StateSchemaV1     protocol.SchemaVersion = 1
 	StateSchemaV2     protocol.SchemaVersion = 2
+	StateSchemaV3     protocol.SchemaVersion = 3
 	StateSchema                              = StateSchemaV1
 
 	// MaxTransactionBytes is a protocol constant, not a node configuration
@@ -109,6 +110,7 @@ const (
 	NotReady              Code = "ERR_PROPOSAL_NOT_READY"
 	Stale                 Code = "ERR_STALE_EXECUTION"
 	AlreadyExecuted       Code = "ERR_ALREADY_EXECUTED"
+	RegistryExists        Code = "ERR_REGISTRY_EXISTS"
 )
 
 // Receipt contains only deterministic values derived from the input state and
@@ -152,6 +154,8 @@ type State struct {
 	Identities      map[string]StoredIdentity
 	Memberships     map[string]membership.Status
 	Governance      *governance.State
+	Research        map[string]StoredResearch
+	Resources       map[string]StoredResource
 }
 
 func Genesis(network protocol.NetworkID) State {
@@ -172,6 +176,8 @@ type Snapshot struct {
 	Identities      []SnapshotIdentity       `cbor:"4,keyasint"`
 	Memberships     []SnapshotMember         `cbor:"5,keyasint"`
 	Governance      *governance.Snapshot     `cbor:"6,keyasint,omitempty"`
+	Research        []SnapshotResearch       `cbor:"7,keyasint,omitempty"`
+	Resources       []SnapshotResource       `cbor:"8,keyasint,omitempty"`
 }
 
 type SnapshotIdentity struct {
@@ -193,14 +199,20 @@ type SnapshotMember struct {
 }
 
 func (s State) Snapshot() (Snapshot, error) {
-	if s.SchemaVersion != StateSchemaV1 && s.SchemaVersion != StateSchemaV2 {
+	if s.SchemaVersion != StateSchemaV1 && s.SchemaVersion != StateSchemaV2 && s.SchemaVersion != StateSchemaV3 {
 		return Snapshot{}, fmt.Errorf("unsupported state schema %d", s.SchemaVersion)
 	}
 	if s.SchemaVersion == StateSchemaV1 && s.Governance != nil {
 		return Snapshot{}, fmt.Errorf("governance state requires state schema v2")
 	}
-	if s.SchemaVersion == StateSchemaV2 && s.Governance == nil {
+	if (s.SchemaVersion == StateSchemaV2 || s.SchemaVersion == StateSchemaV3) && s.Governance == nil {
 		return Snapshot{}, fmt.Errorf("state schema v2 requires governance state")
+	}
+	if s.SchemaVersion != StateSchemaV3 && (s.Research != nil || s.Resources != nil) {
+		return Snapshot{}, fmt.Errorf("registry state requires state schema v3")
+	}
+	if s.SchemaVersion == StateSchemaV3 && (s.Research == nil || s.Resources == nil) {
+		return Snapshot{}, fmt.Errorf("state schema v3 requires registry state")
 	}
 	if s.NetworkID == "" {
 		return Snapshot{}, fmt.Errorf("empty state network")
@@ -297,6 +309,11 @@ func (s State) Snapshot() (Snapshot, error) {
 		}
 		result.Governance = &governanceSnapshot
 	}
+	if s.SchemaVersion == StateSchemaV3 {
+		if err := snapshotRegistries(s, &result); err != nil {
+			return Snapshot{}, err
+		}
+	}
 
 	return result, nil
 }
@@ -324,6 +341,18 @@ func cloneState(s State) State {
 		ProtocolVersion: s.ProtocolVersion,
 		Identities:      make(map[string]StoredIdentity, len(s.Identities)),
 		Memberships:     make(map[string]membership.Status, len(s.Memberships)),
+	}
+	if s.Research != nil {
+		cloned.Research = make(map[string]StoredResearch, len(s.Research))
+		for key, entry := range s.Research {
+			cloned.Research[key] = cloneStoredResearch(entry)
+		}
+	}
+	if s.Resources != nil {
+		cloned.Resources = make(map[string]StoredResource, len(s.Resources))
+		for key, entry := range s.Resources {
+			cloned.Resources[key] = cloneStoredResource(entry)
+		}
 	}
 	if s.Governance != nil {
 		governanceCopy := s.Governance.Clone()

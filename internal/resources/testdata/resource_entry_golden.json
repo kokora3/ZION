@@ -1,0 +1,23 @@
+{
+  "canonical_cbor_hex": "a70101026744415441534554036c5a494f4e204461746173657404782044657465726d696e6973746963207265736f75726365206d657461646174612e0781a10165416c69636508800981a30178197a696f6e2e63616e6f6e6963616c2f72656c617465642f7631026852455345415243480378557a696f6e3a72657365617263683a7368613235363a34366461653532343634343337316536366265326331636663666430633061613465653964613261323363653634616338663434353537393966643930343337",
+  "logical": {
+    "schema_version": 1,
+    "kind": "DATASET",
+    "name": "ZION Dataset",
+    "summary": "Deterministic resource metadata.",
+    "maintainers": [
+      {
+        "display_name": "Alice"
+      }
+    ],
+    "object_refs": [],
+    "canonical_refs": [
+      {
+        "relation": "zion.canonical/related/v1",
+        "target_kind": "RESEARCH",
+        "target_id": "zion:research:sha256:46dae524644371e66be2c1cfcfd0c0aa4ee9da2a23ce64ac8f4455799fd90437"
+      }
+    ]
+  },
+  "resource_id": "zion:resource:sha256:6909f45b0ac3dd29fdcbdc0f1a142b8bb7dcb26d2de02c6b9a31336c9c817df7"
+}

@@ -11,6 +11,8 @@ import (
 	"github.com/kokora3/zion/internal/membership"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/protocol"
+	"github.com/kokora3/zion/internal/research"
+	"github.com/kokora3/zion/internal/resources"
 )
 
 func boardTestIdentity(t testing.TB, marker byte) (ed25519.PrivateKey, identity.IdentityID, identity.KeyID, chain.State) {
@@ -131,6 +133,30 @@ func TestBoardContentAndReferenceLimits(t *testing.T) {
 	event.Body.References = make([]Reference, MaxBoardReferences+1)
 	if _, err := event.CanonicalBytes(); err == nil {
 		t.Fatal("too many Board references accepted")
+	}
+}
+
+func TestBoardResearchAndResourceReferencesAreSignedOffChainData(t *testing.T) {
+	event, state, key := boardTestEvent(t)
+	researchID := research.ID{HashDigest: protocol.HashBytes([]byte("board-research"))}
+	resourceID := resources.ID{HashDigest: protocol.HashBytes([]byte("board-resource"))}
+	event.Body.References = []Reference{{Relation: "zion.community/discusses/v1", TargetKind: "RESEARCH", TargetID: researchID.String()},
+		{Relation: "zion.community/discusses/v1", TargetKind: "RESOURCE", TargetID: resourceID.String()}}
+	event, err := SignEvent(event.Body, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := VerifyAndClassify(event, state); err != nil {
+		t.Fatal(err)
+	}
+	tampered := event
+	tampered.Body.References = append([]Reference(nil), event.Body.References...)
+	tampered.Body.References[0].TargetID = research.ID{HashDigest: protocol.HashBytes([]byte("other"))}.String()
+	if _, _, err := VerifyAndClassify(tampered, state); err == nil {
+		t.Fatal("Board reference was not bound by the signature")
+	}
+	if (Reference{Relation: "x", TargetKind: "UNKNOWN", TargetID: "anything"}).Validate() == nil {
+		t.Fatal("unknown Board target kind accepted")
 	}
 }
 

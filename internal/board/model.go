@@ -12,6 +12,8 @@ import (
 	"github.com/kokora3/zion/internal/membership"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/protocol"
+	"github.com/kokora3/zion/internal/research"
+	"github.com/kokora3/zion/internal/resources"
 )
 
 const (
@@ -37,6 +39,7 @@ var (
 	ErrPublicationDenied   = errors.New("board publication not authorized")
 	ErrParentNotFound      = errors.New("board parent post not found")
 	ErrBoardContentMissing = errors.New("board content object missing")
+	ErrReferenceNotFound   = errors.New("board canonical reference target not found")
 )
 
 type ContentFormat string
@@ -103,10 +106,21 @@ func (r Reference) Validate() error {
 		len([]byte(r.TargetKind)) > MaxTargetKindBytes || len([]byte(r.TargetID)) > MaxTargetIDBytes {
 		return ErrInvalidEvent
 	}
-	if r.TargetKind == "OBJECT" {
+	switch r.TargetKind {
+	case "OBJECT":
 		if _, err := protocol.ParseObjectID(r.TargetID); err != nil {
 			return ErrInvalidEvent
 		}
+	case "RESEARCH":
+		if _, err := research.ParseID(r.TargetID); err != nil {
+			return ErrInvalidEvent
+		}
+	case "RESOURCE":
+		if _, err := resources.ParseID(r.TargetID); err != nil {
+			return ErrInvalidEvent
+		}
+	default:
+		return ErrInvalidEvent
 	}
 	return nil
 }

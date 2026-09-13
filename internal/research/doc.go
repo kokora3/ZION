@@ -1,3 +1,3 @@
-// Package research will manage Research Registry metadata and its admission
-// workflow. Registry behavior is deferred in Phase 1.
+// Package research defines immutable canonical Research Registry metadata and
+// typed ResearchIDs. Governance and chain mutation live outside this package.
 package research

@@ -346,6 +346,7 @@ func (r *Runtime) installOffer(offer StateSnapshotOffer, offeredState chain.Stat
 		return err
 	}
 	r.state, r.height, r.sync, r.persisted = offeredState, offer.Height, Synced, true
+	_ = r.registryIndex.Rebuild(offeredState)
 	for _, notice := range offer.Finalized {
 		r.remember(TransactionRecord{TxID: notice.TxID, Status: "FINALIZED", CommittedHeight: notice.Height,
 			ResultCode: notice.ResultCode, StateHash: notice.StateHash})

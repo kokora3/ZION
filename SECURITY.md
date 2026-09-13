@@ -99,3 +99,13 @@ Event objects, content bodies, titles, references, announce frames, sync pages, 
 The Board index and local hide map are rebuildable operational state. Hiding does not delete immutable objects, retract data from peers, or create global moderation authority. Public P2P content may persist on independent nodes. Phase 10 makes no confidentiality, private-group, end-to-end encryption, anonymity, guaranteed deletion, or permanent-availability claim.
 
 Board objects, availability, index rows, search results, local hiding, announcements, and sync timing never enter canonical state. Ordinary POST/REPLY activity does not alter membership, governance, validators, transactions, `StateHash`, or `AppHash`.
+
+## Phase 11 canonical-registry boundaries
+
+Research and Resource admission requires the existing canonical governance process; no administrator, founder key, API, CLI, or local-config bypass exists. Entries are immutable in v0.1, duplicate admission and double execution fail deterministically, and failed execution cannot partially mutate registry or proposal state.
+
+Apply validates only bounded canonical metadata and reference syntax/existence in canonical state. It never reads the filesystem or object store and never contacts P2P, HTTP, DNS, DOI, GitHub, or another external service. External URIs are not fetched during consensus. Missing object bytes do not invalidate an admitted ObjectID reference or change StateHash/AppHash.
+
+ObjectID references establish content identity, not safety, endorsement, availability, or permission to execute. Registered repositories and tools are never cloned, installed, updated, or executed automatically. Governance admission is curation; it is not a malware-free, security-audited, academically peer-reviewed, or permanently available guarantee.
+
+Canonical registry references are governance-approved chain metadata. Board Research/Resource references remain signed off-chain community statements and confer no canonical authority. Registry search indexes and `present_local` hints are replaceable local state; corrupt indexes rebuild from canonical application state without changing consensus.

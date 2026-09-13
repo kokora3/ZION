@@ -26,22 +26,23 @@ const (
 var ErrInvalidBoardQuery = errors.New("invalid board query")
 
 type BoardEntry struct {
-	PostID              string                    `json:"post_id"`
-	Kind                board.EventKind           `json:"kind"`
-	AuthorIdentity      string                    `json:"author_identity"`
-	AuthorKeyID         string                    `json:"author_key_id"`
-	CreatedAt           int64                     `json:"created_at"`
-	ParentPost          string                    `json:"parent_post,omitempty"`
-	ContentObject       string                    `json:"content_object"`
-	References          []board.Reference         `json:"references"`
-	ContentPresent      bool                      `json:"content_present"`
-	SignatureStatus     string                    `json:"signature_status"`
-	AuthorizationStatus board.AuthorizationStatus `json:"authorization_status"`
-	CurrentMembership   membership.Status         `json:"author_current_membership"`
-	LocalVisibility     string                    `json:"local_visibility"`
-	ParentPresent       bool                      `json:"parent_present"`
-	Title               string                    `json:"title,omitempty"`
-	Body                string                    `json:"body,omitempty"`
+	PostID               string                    `json:"post_id"`
+	Kind                 board.EventKind           `json:"kind"`
+	AuthorIdentity       string                    `json:"author_identity"`
+	AuthorKeyID          string                    `json:"author_key_id"`
+	CreatedAt            int64                     `json:"created_at"`
+	ParentPost           string                    `json:"parent_post,omitempty"`
+	ContentObject        string                    `json:"content_object"`
+	References           []board.Reference         `json:"references"`
+	UnresolvedReferences []board.Reference         `json:"unresolved_references,omitempty"`
+	ContentPresent       bool                      `json:"content_present"`
+	SignatureStatus      string                    `json:"signature_status"`
+	AuthorizationStatus  board.AuthorizationStatus `json:"authorization_status"`
+	CurrentMembership    membership.Status         `json:"author_current_membership"`
+	LocalVisibility      string                    `json:"local_visibility"`
+	ParentPresent        bool                      `json:"parent_present"`
+	Title                string                    `json:"title,omitempty"`
+	Body                 string                    `json:"body,omitempty"`
 }
 
 type boardDisk struct {
@@ -255,6 +256,7 @@ func (i *BoardIndex) RefreshMembership(values map[string]membership.Status) {
 func (i *BoardIndex) normalizeLocked() {
 	for id, entry := range i.entries {
 		entry.References = append([]board.Reference(nil), entry.References...)
+		entry.UnresolvedReferences = append([]board.Reference(nil), entry.UnresolvedReferences...)
 		entry.ParentPresent = entry.ParentPost == ""
 		if entry.ParentPost != "" {
 			_, entry.ParentPresent = i.entries[entry.ParentPost]
@@ -319,6 +321,7 @@ func (i *BoardIndex) saveLocked() error {
 
 func cloneEntry(entry BoardEntry) BoardEntry {
 	entry.References = append([]board.Reference(nil), entry.References...)
+	entry.UnresolvedReferences = append([]board.Reference(nil), entry.UnresolvedReferences...)
 	return entry
 }
 

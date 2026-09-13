@@ -26,7 +26,7 @@ Content uses the versioned `zion.board/content/v1` object type. Its canonical CB
 
 The complete canonical signed-event object is hashed with the unchanged Phase 2 derivation. That ObjectID is the `post_id`. It commits to the signature as well as the event fields. The event's `content_object` is a different ObjectID, pointing to independently validated content. A reply must reference a valid parent PostID; locally authored replies require that parent to be present.
 
-Community references are signed off-chain relationships with bounded `relation`, `target_kind`, and `target_id`. An OBJECT target must be a strict ObjectID. A reference is an author's statement, not canonical endorsement or governance authority.
+Community references are signed off-chain relationships with bounded `relation`, `target_kind`, and `target_id`. OBJECT, RESEARCH, and RESOURCE targets require strict ObjectID, ResearchID, and ResourceID syntax respectively. Local new events require registry targets to exist; compatible remote events may be retained with unresolved references marked. A reference is an author's statement, not canonical endorsement or governance authority.
 
 Local publication requires an identity known to current chain state, ACTIVE membership, the currently active KeyID, a valid Board-domain signature, locally available valid content, and—when replying—a known parent. PENDING, SUSPENDED, REVOKED, unknown, and retired-key authors cannot create new local publications. A previously valid event can remain cryptographically verifiable after rotation or suspension. Remote admission therefore reports `SIGNATURE_VALID`, current membership, and either `CURRENTLY_AUTHORIZED` or `HISTORICAL_OR_UNCONFIRMED` separately; this is an honest current-state classification, not proof that a remote node observed the exact chain state at the event timestamp.
 
@@ -66,4 +66,4 @@ Board objects/index/visibility ----X----> canonical StateHash/AppHash
 
 Board signatures establish event authorship relative to a key; they do not grant membership, validator status, governance votes, or chain authority. Board objects, index files, peer timing, local hiding, and content availability never enter canonical snapshots. Public Board content may persist on independent peers after a local node hides or loses it. Phase 10 provides no private groups, encryption, anonymity, guaranteed deletion, content safety, or permanent availability.
 
-Phase 11 may define a Research Registry. Phase 10 does not implement research/resource registries, a canonical graph, large-file chunking, automated replication, garbage collection, DHT content routing, or a product web UI.
+Phase 11 defines canonical Research and Resource registries, but Board references to them remain off-chain. ZION does not implement a graph engine, large-file chunking, automated replication, garbage collection, DHT content routing, or a product web UI.

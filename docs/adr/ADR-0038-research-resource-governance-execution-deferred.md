@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted for Phase 6; superseded for Phase 11 by ADR-0066.
 
 ## Context
 

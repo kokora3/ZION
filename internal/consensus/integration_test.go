@@ -25,6 +25,9 @@ import (
 	"github.com/kokora3/zion/internal/identity"
 	"github.com/kokora3/zion/internal/membership"
 	"github.com/kokora3/zion/internal/protocol"
+	"github.com/kokora3/zion/internal/registry"
+	"github.com/kokora3/zion/internal/research"
+	"github.com/kokora3/zion/internal/resources"
 )
 
 const (
@@ -790,6 +793,49 @@ func TestGovernanceThroughCometBFTAndValidatorSetChanges(t *testing.T) {
 			t.Fatal("validator power changed from one")
 		}
 	}
+}
+
+func TestResearchAndResourceAdmissionsThroughFourValidatorCometBFT(t *testing.T) {
+	if testing.Short() {
+		t.Skip("registry four-validator integration test")
+	}
+	validators, keys := testValidators()
+	fixture := governanceIntegrationState(t, validators)
+	var err error
+	fixture.state, err = chain.BootstrapRegistries(fixture.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis, err := NewGenesisWithState(protocol.Alpha1NetworkID, validators, fixture.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	network := newLocalNetworkWithGenesis(t, genesis, keys, true)
+	network.start(t, 0, 1, 2, 3)
+	active := []int{0, 1, 2, 3}
+
+	researchBody := research.EntryBody{SchemaVersion: research.Schema, Title: "Four-validator research", Summary: "Canonical admission.",
+		Contributors: []research.Contributor{{DisplayName: "Alice"}}, ExternalIdentifiers: []research.ExternalIdentifier{},
+		ObjectRefs: []protocol.ObjectID{}, CanonicalRefs: []registry.CanonicalReference{}}
+	researchID, _ := researchBody.ID()
+	proposal := governanceProposalTx(t, governance.ProposalBody{SchemaVersion: governance.Schema, NetworkID: protocol.Alpha1NetworkID,
+		Kind: governance.ResearchAdmission, Proposer: fixture.members[0].IdentityID, CreatedAt: 100, Research: &researchBody}, fixture.memberKeys[0])
+	statuses, _ := approveProposal(t, network, proposal, fixture, active)
+	if len(statuses[0].Snapshot.Research) != 1 || statuses[0].Snapshot.Research[0].ID.String() != researchID.String() {
+		t.Fatal("research registry did not converge")
+	}
+
+	resourceBody := resources.EntryBody{SchemaVersion: resources.Schema, Kind: resources.Dataset, Name: "Four-validator data", Summary: "Canonical resource.",
+		Maintainers: []resources.Maintainer{{DisplayName: "Bob"}}, ObjectRefs: []protocol.ObjectID{},
+		CanonicalRefs: []registry.CanonicalReference{{Relation: registry.RelationImplements, TargetKind: registry.TargetResearch, TargetID: researchID.String()}}}
+	resourceID, _ := resourceBody.ID()
+	proposal = governanceProposalTx(t, governance.ProposalBody{SchemaVersion: governance.Schema, NetworkID: protocol.Alpha1NetworkID,
+		Kind: governance.ResourceAdmission, Proposer: fixture.members[1].IdentityID, CreatedAt: 200, Resource: &resourceBody}, fixture.memberKeys[1])
+	statuses, _ = approveProposal(t, network, proposal, fixture, active)
+	if len(statuses[0].Snapshot.Resources) != 1 || statuses[0].Snapshot.Resources[0].ID.String() != resourceID.String() {
+		t.Fatal("resource registry did not converge")
+	}
+	requireStateConverged(t, statuses)
 }
 
 func memberStatus(snapshot chain.Snapshot, memberID identity.IdentityID) membership.Status {

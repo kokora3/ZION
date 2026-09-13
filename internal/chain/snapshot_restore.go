@@ -91,6 +91,9 @@ func StateFromSnapshot(snapshot Snapshot) (State, error) {
 		}
 		state.Governance = &governanceState
 	}
+	if err := restoreRegistries(snapshot, &state); err != nil {
+		return State{}, err
+	}
 	want, err := protocol.CanonicalEncode(snapshot)
 	if err != nil {
 		return State{}, err

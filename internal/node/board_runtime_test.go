@@ -20,6 +20,8 @@ import (
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/p2p"
 	"github.com/kokora3/zion/internal/protocol"
+	"github.com/kokora3/zion/internal/research"
+	"github.com/kokora3/zion/internal/resources"
 )
 
 type boardAuthor struct {
@@ -180,6 +182,46 @@ func TestRuntimeBoardAPIReplySearchHideRebuildAndIsolation(t *testing.T) {
 	feed = apiRequest(t, http.MethodGet, "http://"+restarted.APIAddress()+"/v1/board/posts", nil)
 	if !bytes.Contains(feed.Body, []byte(postID)) {
 		t.Fatal("Board index did not rebuild from immutable objects")
+	}
+}
+
+func TestBoardRegistryReferencesRequireLocalTargetsButRetainRemoteUnresolved(t *testing.T) {
+	state, authors := runtimeBoardState(t, 1)
+	cfg := testRuntimeConfig(t, "board-registry-refs", true, false)
+	cfg.InitialState = state
+	runtime, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := runtime.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Stop(context.Background())
+	researchID := research.ID{HashDigest: protocol.HashBytes([]byte("admitted"))}
+	missingResource := resources.ID{HashDigest: protocol.HashBytes([]byte("missing"))}
+	runtime.mu.Lock()
+	runtime.state.Research = map[string]chain.StoredResearch{researchID.String(): {ID: researchID}}
+	runtime.state.Resources = map[string]chain.StoredResource{}
+	runtime.mu.Unlock()
+	contentID := storeBoardContent(t, runtime, "Registry link", "Community reference", 1710000000300)
+	validRaw := signedBoardObject(t, authors[0], board.KindPost, 1710000000300, contentID, "", []board.Reference{{Relation: "zion.community/discusses/v1", TargetKind: "RESEARCH", TargetID: researchID.String()}})
+	if _, err := runtime.SubmitBoardEvent(ctx, validRaw); err != nil {
+		t.Fatalf("admitted ResearchID local reference rejected: %v", err)
+	}
+	missingRaw := signedBoardObject(t, authors[0], board.KindPost, 1710000000301, contentID, "", []board.Reference{{Relation: "zion.community/discusses/v1", TargetKind: "RESOURCE", TargetID: missingResource.String()}})
+	if _, err := runtime.SubmitBoardEvent(ctx, missingRaw); !errors.Is(err, board.ErrReferenceNotFound) {
+		t.Fatalf("missing local registry target = %v", err)
+	}
+	if err := runtime.AdmitRemoteBoardEvent(ctx, missingRaw); err != nil {
+		t.Fatalf("remote unresolved event rejected: %v", err)
+	}
+	object, _ := objects.Decode(missingRaw)
+	postID, _ := board.PostID(object)
+	value, found, err := runtime.BoardPost(postID.String())
+	if err != nil || !found || len(value.(index.BoardEntry).UnresolvedReferences) != 1 {
+		t.Fatal("remote unresolved reference was not retained and marked")
 	}
 }
 

@@ -17,18 +17,21 @@ import (
 )
 
 type objectBackend struct {
-	store       *objects.Store
-	fetchObject objects.Object
-	fetchErr    error
-	getErr      error
-	putErr      error
-	boardRaw    []byte
-	boardResult any
-	boardValue  any
-	boardFound  bool
-	boardErr    error
-	hiddenID    string
-	hidden      bool
+	store         *objects.Store
+	fetchObject   objects.Object
+	fetchErr      error
+	getErr        error
+	putErr        error
+	boardRaw      []byte
+	boardResult   any
+	boardValue    any
+	boardFound    bool
+	boardErr      error
+	hiddenID      string
+	hidden        bool
+	registryValue any
+	registryFound bool
+	registryErr   error
 }
 
 func (b *objectBackend) Health() any       { return map[string]bool{"live": true} }
@@ -85,6 +88,25 @@ func (b *objectBackend) BoardSearch(string, int, int) (any, error)  { return b.b
 func (b *objectBackend) SetBoardHidden(id string, hidden bool) error {
 	b.hiddenID, b.hidden = id, hidden
 	return b.boardErr
+}
+
+func (b *objectBackend) ResearchList(offset, limit int) (any, error) {
+	return b.registryValue, b.registryErr
+}
+func (b *objectBackend) Research(string) (any, bool, error) {
+	return b.registryValue, b.registryFound, b.registryErr
+}
+func (b *objectBackend) ResearchSearch(string, int, int) (any, error) {
+	return b.registryValue, b.registryErr
+}
+func (b *objectBackend) ResourceList(offset, limit int) (any, error) {
+	return b.registryValue, b.registryErr
+}
+func (b *objectBackend) Resource(string) (any, bool, error) {
+	return b.registryValue, b.registryFound, b.registryErr
+}
+func (b *objectBackend) ResourceSearch(string, int, int) (any, error) {
+	return b.registryValue, b.registryErr
 }
 
 func apiTestObject(payload string) objects.Object {

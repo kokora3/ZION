@@ -1,3 +1,3 @@
-// Package resources will manage Resource Registry metadata for repositories,
-// tools, datasets, and references. Registry behavior is deferred in Phase 1.
+// Package resources defines immutable canonical Resource Registry metadata and
+// typed ResourceIDs. Governance and chain mutation live outside this package.
 package resources

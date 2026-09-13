@@ -18,6 +18,8 @@ import (
 	"github.com/kokora3/zion/internal/chain"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/protocol"
+	"github.com/kokora3/zion/internal/research"
+	"github.com/kokora3/zion/internal/resources"
 )
 
 func main() {
@@ -32,7 +34,7 @@ func main() {
 	_ = flags.Parse(os.Args[1:])
 	args := flags.Args()
 	if len(args) == 0 {
-		fail("usage: zionctl [--api URL] status|peers|state|tx ...|object ...|board ...")
+		fail("usage: zionctl [--api URL] status|peers|state|tx ...|object ...|board ...|research ...|resource ...")
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	var method, path string
@@ -166,6 +168,43 @@ func main() {
 			method, path = http.MethodGet, "/v1/board/search?q="+url.QueryEscape(args[2])
 		default:
 			fail("unknown board command")
+		}
+	case "research", "resource":
+		kind := args[0]
+		if len(args) < 2 {
+			fail("usage: zionctl " + kind + " list|get|search")
+		}
+		base := "/v1/" + kind
+		if kind == "resource" {
+			base = "/v1/resources"
+		}
+		switch args[1] {
+		case "list":
+			if len(args) != 2 {
+				fail("usage: zionctl " + kind + " list")
+			}
+			method, path = http.MethodGet, base
+		case "get":
+			if len(args) != 3 {
+				fail("usage: zionctl " + kind + " get <id>")
+			}
+			if kind == "research" {
+				if _, err := research.ParseID(args[2]); err != nil {
+					fail("invalid ResearchID: " + err.Error())
+				}
+			} else {
+				if _, err := resources.ParseID(args[2]); err != nil {
+					fail("invalid ResourceID: " + err.Error())
+				}
+			}
+			method, path = http.MethodGet, base+"/"+url.PathEscape(args[2])
+		case "search":
+			if len(args) != 3 || args[2] == "" {
+				fail("usage: zionctl " + kind + " search <query>")
+			}
+			method, path = http.MethodGet, base+"/search?q="+url.QueryEscape(args[2])
+		default:
+			fail("unknown " + kind + " command")
 		}
 	default:
 		fail("unknown command")

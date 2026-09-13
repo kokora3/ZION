@@ -28,6 +28,7 @@ type File struct {
 	API           API        `yaml:"api"`
 	Objects       Objects    `yaml:"objects"`
 	Board         Board      `yaml:"board"`
+	Registries    Registries `yaml:"registries"`
 	Consensus     Consensus  `yaml:"consensus"`
 }
 
@@ -68,6 +69,11 @@ type Board struct {
 	MaxSyncEventsPerCycle int    `yaml:"max_sync_events_per_cycle"`
 	MaxConcurrentHandlers int    `yaml:"max_concurrent_handlers"`
 	PeerTimeout           string `yaml:"peer_timeout"`
+}
+
+// Registries configures only the rebuildable local search projection.
+type Registries struct {
+	IndexPath string `yaml:"index_path"`
 }
 
 type Consensus struct {
@@ -163,6 +169,9 @@ func (f File) RuntimeConfig() (node.Config, error) {
 	}
 	if f.Board.IndexPath != "" {
 		cfg.BoardIndexPath = f.Board.IndexPath
+	}
+	if f.Registries.IndexPath != "" {
+		cfg.RegistryIndexPath = f.Registries.IndexPath
 	}
 	if f.Board.AnnounceFanout != 0 {
 		cfg.Board.AnnounceFanout = f.Board.AnnounceFanout

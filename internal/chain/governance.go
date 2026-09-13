@@ -59,7 +59,7 @@ func applyGovernance(original, next State, tx Transaction, txID TxID, context Ex
 	if context.Height <= 0 {
 		return reject(original, txID, tx.Type, Invalid, "governance requires positive consensus height", nil)
 	}
-	if next.SchemaVersion != StateSchemaV2 || next.Governance == nil {
+	if (next.SchemaVersion != StateSchemaV2 && next.SchemaVersion != StateSchemaV3) || next.Governance == nil {
 		return reject(original, txID, tx.Type, GovernanceUnavailable, "governance is not bootstrapped", nil)
 	}
 	if transactionPayloadCount(tx) != 1 {
@@ -75,7 +75,7 @@ func applyGovernance(original, next State, tx Transaction, txID TxID, context Ex
 	case GovernanceFinalize:
 		err = applyFinalize(next, tx, context)
 	case GovernanceExecute:
-		updates, err = applyExecute(next, tx)
+		updates, err = applyExecute(next, tx, context)
 	default:
 		err = fmt.Errorf("unsupported governance transaction")
 	}
@@ -145,6 +145,9 @@ func applyProposal(state State, tx Transaction, context ExecutionContext) error 
 	proposalKey := storedProposalID.String()
 	if _, exists := state.Governance.Proposals[proposalKey]; exists {
 		return fail(ProposalExists, "proposal already exists")
+	}
+	if (proposal.Body.Kind == governance.ResearchAdmission || proposal.Body.Kind == governance.ResourceAdmission) && state.SchemaVersion != StateSchemaV3 {
+		return fail(GovernanceUnavailable, "registry proposal requires state schema v3")
 	}
 	if proposal.Body.Membership != nil {
 		target := proposal.Body.Membership.Target.String()
@@ -260,7 +263,7 @@ func applyFinalize(state State, tx Transaction, context ExecutionContext) error 
 	return nil
 }
 
-func applyExecute(state State, tx Transaction) ([]governance.ValidatorUpdate, error) {
+func applyExecute(state State, tx Transaction, context ExecutionContext) ([]governance.ValidatorUpdate, error) {
 	if tx.GovernanceExecute == nil {
 		return nil, fail(Invalid, "missing governance execution")
 	}
@@ -325,6 +328,14 @@ func applyExecute(state State, tx Transaction) ([]governance.ValidatorUpdate, er
 	case governance.ProtocolUpgrade, governance.Migration:
 		// The approved decision is recorded; software activation/import/export
 		// remains an explicit later-phase operational boundary.
+	case governance.ResearchAdmission:
+		if err := admitResearch(state, record, context.Height); err != nil {
+			return nil, err
+		}
+	case governance.ResourceAdmission:
+		if err := admitResource(state, record, context.Height); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fail(Unsupported, "proposal kind has no Phase 6 execution handler")
 	}

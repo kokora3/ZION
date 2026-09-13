@@ -78,6 +78,7 @@ type Config struct {
 	ObjectFetch               objects.FetchConfig
 	Board                     board.Config
 	BoardIndexPath            string
+	RegistryIndexPath         string
 }
 
 func DefaultConfig(dataDir string, genesisID protocol.HashDigest, initial chain.State) Config {
@@ -88,7 +89,8 @@ func DefaultConfig(dataDir string, genesisID protocol.HashDigest, initial chain.
 		RecentTransactions: 1024, MaxRelayHandlers: 16, MaxSyncHandlers: 4,
 		ObjectDirectory: filepath.Join(dataDir, "objects"), ObjectQuotaBytes: objects.DefaultQuotaBytes,
 		ObjectFetch: objects.DefaultFetchConfig(), Board: board.DefaultConfig(),
-		BoardIndexPath: filepath.Join(dataDir, "board", "index.json")}
+		BoardIndexPath:    filepath.Join(dataDir, "board", "index.json"),
+		RegistryIndexPath: filepath.Join(dataDir, "registries", "index.json")}
 }
 
 type TransactionRecord struct {
@@ -100,29 +102,30 @@ type TransactionRecord struct {
 }
 
 type Runtime struct {
-	mu         sync.RWMutex
-	cfg        Config
-	lifecycle  Lifecycle
-	sync       SyncStatus
-	state      chain.State
-	height     int64
-	persisted  bool
-	store      *StateStore
-	consensus  ConsensusService
-	p2p        *p2p.Node
-	objects    *objects.Store
-	fetcher    *objects.Service
-	board      *board.Service
-	boardIndex *index.BoardIndex
-	api        *api.Server
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	syncMu     sync.Mutex
-	relaySem   chan struct{}
-	syncSem    chan struct{}
-	tx         map[string]TransactionRecord
-	txOrder    []string
+	mu            sync.RWMutex
+	cfg           Config
+	lifecycle     Lifecycle
+	sync          SyncStatus
+	state         chain.State
+	height        int64
+	persisted     bool
+	store         *StateStore
+	consensus     ConsensusService
+	p2p           *p2p.Node
+	objects       *objects.Store
+	fetcher       *objects.Service
+	board         *board.Service
+	boardIndex    *index.BoardIndex
+	registryIndex *index.RegistryIndex
+	api           *api.Server
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
+	syncMu        sync.Mutex
+	relaySem      chan struct{}
+	syncSem       chan struct{}
+	tx            map[string]TransactionRecord
+	txOrder       []string
 }
 
 func New(cfg Config) (*Runtime, error) {
@@ -130,7 +133,7 @@ func New(cfg Config) (*Runtime, error) {
 		cfg.InitialState.NetworkID != cfg.NetworkID || cfg.ShutdownTimeout <= 0 || cfg.RecentTransactions < 1 ||
 		cfg.SyncInterval < 100*time.Millisecond || cfg.SyncInterval > time.Hour || cfg.SyncTimeout <= 0 || cfg.SyncTimeout > time.Minute ||
 		cfg.RecentTransactions > 10000 || cfg.MaxRelayHandlers < 1 || cfg.MaxRelayHandlers > 128 ||
-		cfg.MaxSyncHandlers < 1 || cfg.MaxSyncHandlers > 16 || cfg.ObjectDirectory == "" || cfg.BoardIndexPath == "" {
+		cfg.MaxSyncHandlers < 1 || cfg.MaxSyncHandlers > 16 || cfg.ObjectDirectory == "" || cfg.BoardIndexPath == "" || cfg.RegistryIndexPath == "" {
 		return nil, fmt.Errorf("invalid node runtime configuration")
 	}
 	if cfg.P2P.NetworkID != cfg.NetworkID || !equalHash(cfg.P2P.NetworkFingerprint, cfg.GenesisID) {
@@ -156,7 +159,11 @@ func New(cfg Config) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open board index: %w", err)
 	}
-	return &Runtime{cfg: cfg, lifecycle: Created, sync: Uninitialized, store: store, objects: objectStore, boardIndex: boardIndex,
+	registryIndex, err := index.OpenRegistries(cfg.RegistryIndexPath)
+	if err != nil {
+		return nil, fmt.Errorf("open registry index: %w", err)
+	}
+	return &Runtime{cfg: cfg, lifecycle: Created, sync: Uninitialized, store: store, objects: objectStore, boardIndex: boardIndex, registryIndex: registryIndex,
 		relaySem: make(chan struct{}, cfg.MaxRelayHandlers), syncSem: make(chan struct{}, cfg.MaxSyncHandlers),
 		tx: make(map[string]TransactionRecord)}, nil
 }
@@ -222,6 +229,12 @@ func (r *Runtime) Start(parent context.Context) (err error) {
 		r.mu.Lock()
 		r.persisted = true
 		r.mu.Unlock()
+	}
+	r.mu.RLock()
+	indexState := cloneState(r.state)
+	r.mu.RUnlock()
+	if err := r.registryIndex.Rebuild(indexState); err != nil {
+		return fmt.Errorf("rebuild registry index: %w", err)
 	}
 	r.mu.Lock()
 	r.ctx, r.cancel = context.WithCancel(parent)
@@ -297,6 +310,7 @@ func (r *Runtime) acceptConsensusCommit(state chain.State, height int64, txs [][
 		return err
 	}
 	r.state, r.height, r.sync, r.persisted = cloneState(state), height, Synced, true
+	_ = r.registryIndex.Rebuild(state)
 	for _, raw := range txs {
 		tx, err := consensus.DecodeTransaction(raw, r.cfg.NetworkID)
 		if err != nil {
@@ -558,7 +572,8 @@ func (r *Runtime) StateSummary() any {
 	}
 	return map[string]any{"schema_version": r.state.SchemaVersion, "network_id": r.state.NetworkID, "state_hash": hash.String(),
 		"accepted_height": r.height, "identity_count": len(r.state.Identities), "membership_counts": counts,
-		"governance_proposal_count": proposals, "validator_count": validators}
+		"governance_proposal_count": proposals, "validator_count": validators,
+		"research_count": len(r.state.Research), "resource_count": len(r.state.Resources)}
 }
 
 func (r *Runtime) Identity(value string) (any, bool, error) {

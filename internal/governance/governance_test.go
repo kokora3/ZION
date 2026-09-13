@@ -2,11 +2,14 @@ package governance
 
 import (
 	"crypto/ed25519"
+	"strings"
 	"testing"
 
 	"github.com/kokora3/zion/internal/identity"
 	"github.com/kokora3/zion/internal/membership"
 	"github.com/kokora3/zion/internal/protocol"
+	"github.com/kokora3/zion/internal/registry"
+	"github.com/kokora3/zion/internal/research"
 )
 
 func testPrivateKey(start byte) ed25519.PrivateKey {
@@ -15,6 +18,23 @@ func testPrivateKey(start byte) ed25519.PrivateKey {
 		seed[i] = start + byte(i)
 	}
 	return ed25519.NewKeyFromSeed(seed)
+}
+
+func TestResearchAdmissionRetainsExistingProposalPayloadLimit(t *testing.T) {
+	contributors := make([]research.Contributor, research.MaxContributors)
+	for position := range contributors {
+		contributors[position] = research.Contributor{DisplayName: strings.Repeat("x", research.MaxContributorNameBytes)}
+	}
+	body := ProposalBody{SchemaVersion: Schema, NetworkID: protocol.Alpha1NetworkID, Kind: ResearchAdmission,
+		Proposer: identity.IdentityID{HashDigest: protocol.HashBytes([]byte("proposer"))}, CreatedAt: 1,
+		Research: &research.EntryBody{SchemaVersion: research.Schema, Title: "bounded", Summary: "bounded", Contributors: contributors,
+			ExternalIdentifiers: []research.ExternalIdentifier{}, ObjectRefs: []protocol.ObjectID{}, CanonicalRefs: []registry.CanonicalReference{}}}
+	if body.Research.Validate() != nil {
+		t.Fatal("field-valid research candidate unexpectedly invalid")
+	}
+	if body.Validate() == nil {
+		t.Fatal("research proposal bypassed the existing 4096-byte governance payload limit")
+	}
 }
 
 func testIdentity(t testing.TB, key ed25519.PrivateKey, createdAt protocol.ProtocolTimestamp) identity.IdentityID {
