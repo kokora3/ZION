@@ -1,0 +1,5 @@
+./constants_u64.go
+./sc_minimal.go
+./scalar.go
+./scalar_u64.go
+./scalar_unpacked.go
