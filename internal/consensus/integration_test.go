@@ -42,6 +42,7 @@ type localValidator struct {
 	privKey cmted25519.PrivKey
 	nodeKey *p2p.NodeKey
 	node    *node.Node
+	service *Service
 }
 
 type localNetwork struct {
@@ -146,18 +147,11 @@ func (network *localNetwork) initializeFiles(t testing.TB, validator *localValid
 }
 
 func (network *localNetwork) makeNode(validator *localValidator) error {
-	filePV := privval.LoadFilePV(validator.config.PrivValidatorKeyFile(), validator.config.PrivValidatorStateFile())
-	nodeKey, err := p2p.LoadNodeKey(validator.config.NodeKeyFile())
+	created, err := NewService(validator.config, validator.app)
 	if err != nil {
 		return err
 	}
-	created, err := node.NewNode(context.Background(), validator.config, filePV, nodeKey,
-		proxy.NewLocalClientCreator(validator.app), node.DefaultGenesisDocProviderFunc(validator.config),
-		config.DefaultDBProvider, node.DefaultMetricsProvider(validator.config.Instrumentation), cmtlog.NewNopLogger())
-	if err != nil {
-		return err
-	}
-	validator.node = created
+	validator.service = created
 	return nil
 }
 
@@ -168,9 +162,10 @@ func (network *localNetwork) start(t testing.TB, indexes ...int) {
 		if err := network.makeNode(validator); err != nil {
 			t.Fatalf("make validator %d: %v", index, err)
 		}
-		if err := validator.node.Start(); err != nil {
+		if err := validator.service.Start(context.Background()); err != nil {
 			t.Fatalf("start validator %d: %v", index, err)
 		}
+		validator.node = validator.service.Node()
 	}
 	deadline := time.Now().Add(networkStartupTimeout)
 	for time.Now().Before(deadline) {
@@ -193,18 +188,9 @@ func (network *localNetwork) stop(index int) {
 	if validator.node == nil {
 		return
 	}
-	// CometBFT v1.0.1's switch stops consensus reactors asynchronously with
-	// respect to their per-peer gossip routines. Drain the switch while its
-	// block/state stores are still open; otherwise a late queryMaj23 iteration
-	// can race Node.OnStop closing Pebble and panic with "pebble: closed".
-	if validator.node.Switch().IsRunning() {
-		_ = validator.node.Switch().Stop()
-		validator.node.Switch().Wait()
-		time.Sleep(100 * time.Millisecond)
-	}
-	_ = validator.node.Stop()
-	validator.node.Wait()
+	_ = validator.service.Stop(context.Background())
 	validator.node = nil
+	validator.service = nil
 }
 
 func (network *localNetwork) stopAll() {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
@@ -14,6 +15,67 @@ import (
 	"github.com/kokora3/zion/internal/chain"
 	"github.com/kokora3/zion/internal/protocol"
 )
+
+// LoadGenesis reads and verifies the public CometBFT genesis document without
+// loading any validator private material. The returned InitialState is only a
+// placeholder; NewApplicationFromState receives the verified durable state.
+func LoadGenesis(path string, network protocol.NetworkID) (Genesis, error) {
+	doc, err := cmttypes.GenesisDocFromFile(path)
+	if err != nil {
+		return Genesis{}, err
+	}
+	if err := doc.ValidateAndComplete(); err != nil {
+		return Genesis{}, err
+	}
+	application, err := decodeAppGenesis(doc.AppState)
+	if err != nil || application.SchemaVersion != GenesisSchema || application.NetworkID != network {
+		return Genesis{}, fmt.Errorf("invalid ZION application genesis")
+	}
+	stateHash, err := parseGenesisStateHash(application.StateHash)
+	if err != nil || !bytes.Equal(stateHash.Digest, doc.AppHash) {
+		return Genesis{}, fmt.Errorf("CometBFT AppHash differs from ZION genesis StateHash")
+	}
+	validators := make([]Validator, len(doc.Validators))
+	for index, validator := range doc.Validators {
+		if validator.PubKey == nil || validator.PubKey.Type() != "ed25519" {
+			return Genesis{}, fmt.Errorf("validator %d does not use Ed25519", index)
+		}
+		validators[index] = Validator{Name: validator.Name, PublicKey: append([]byte(nil), validator.PubKey.Bytes()...), Power: validator.Power}
+	}
+	validatorGenesis, err := NewGenesis(network, validators)
+	if err != nil {
+		return Genesis{}, fmt.Errorf("invalid genesis validators: %w", err)
+	}
+	validatorHash := validatorGenesis.ValidatorSetHash
+	if application.ValidatorSetHash != "sha256:"+hex.EncodeToString(validatorHash.Digest) {
+		return Genesis{}, fmt.Errorf("application genesis validator-set hash mismatch")
+	}
+	canonicalAppState, err := json.Marshal(application)
+	if err != nil {
+		return Genesis{}, err
+	}
+	genesisID := protocol.HashBytes(canonicalAppState)
+	expectedChainID := fmt.Sprintf("%s-%s", network, hex.EncodeToString(genesisID.Digest[:6]))
+	if doc.ChainID != expectedChainID {
+		return Genesis{}, fmt.Errorf("CometBFT chain ID differs from ZION genesis identity")
+	}
+	return Genesis{NetworkID: network, StateHash: stateHash, ValidatorSetHash: validatorHash,
+		GenesisID: genesisID, ChainID: doc.ChainID, AppState: canonicalAppState,
+		Validators: validatorGenesis.Validators, InitialState: chain.Genesis(network)}, nil
+}
+
+func parseGenesisStateHash(value string) (chain.StateHash, error) {
+	const prefix = "zion:state:sha256:"
+	if !strings.HasPrefix(value, prefix) || len(value) != len(prefix)+64 {
+		return chain.StateHash{}, fmt.Errorf("invalid genesis StateHash")
+	}
+	digest, err := hex.DecodeString(strings.TrimPrefix(value, prefix))
+	if err != nil || hex.EncodeToString(digest) != strings.TrimPrefix(value, prefix) {
+		return chain.StateHash{}, fmt.Errorf("invalid genesis StateHash")
+	}
+	hash := chain.StateHash{HashDigest: protocol.HashDigest{Algorithm: protocol.HashAlgorithmSHA256, Digest: digest}}
+	return hash, hash.Validate()
+}
 
 const (
 	GenesisSchema         protocol.SchemaVersion = 1

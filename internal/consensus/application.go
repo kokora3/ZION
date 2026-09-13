@@ -34,7 +34,10 @@ type Status struct {
 type pendingBlock struct {
 	height int64
 	state  chain.State
+	txs    [][]byte
 }
+
+type CommitObserver func(chain.State, int64, [][]byte) error
 
 // Application implements CometBFT's current ABCI interface. Consensus height
 // and engine metadata remain outside canonical ZION State.
@@ -45,18 +48,34 @@ type Application struct {
 	committed chain.State
 	height    int64
 	pending   *pendingBlock
+	observer  CommitObserver
+}
+
+func (app *Application) SetCommitObserver(observer CommitObserver) {
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	app.observer = observer
 }
 
 func NewApplication(genesis Genesis) (*Application, error) {
-	state := genesis.InitialState
+	return NewApplicationFromState(genesis, genesis.InitialState, 0)
+}
+
+// NewApplicationFromState restores only committed application state. The
+// caller must bind it to the matching CometBFT database and verified ZION
+// snapshot; speculative proposal state is never restored here.
+func NewApplicationFromState(genesis Genesis, state chain.State, height int64) (*Application, error) {
+	if height < 0 || state.NetworkID != genesis.NetworkID {
+		return nil, fmt.Errorf("invalid restored application state")
+	}
 	hash, err := state.Hash()
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(hash.Digest, genesis.StateHash.Digest) {
+	if height == 0 && !bytes.Equal(hash.Digest, genesis.StateHash.Digest) {
 		return nil, fmt.Errorf("application genesis StateHash mismatch")
 	}
-	return &Application{genesis: genesis, committed: state}, nil
+	return &Application{genesis: genesis, committed: state, height: height}, nil
 }
 
 func (app *Application) Info(context.Context, *abci.InfoRequest) (*abci.InfoResponse, error) {
@@ -192,7 +211,11 @@ func (app *Application) FinalizeBlock(_ context.Context, req *abci.FinalizeBlock
 	if err != nil {
 		return nil, fmt.Errorf("application invariant: resulting state: %w", err)
 	}
-	app.pending = &pendingBlock{height: req.Height, state: working}
+	txs := make([][]byte, len(req.Txs))
+	for i := range req.Txs {
+		txs[i] = append([]byte(nil), req.Txs[i]...)
+	}
+	app.pending = &pendingBlock{height: req.Height, state: working, txs: txs}
 	return &abci.FinalizeBlockResponse{TxResults: results, AppHash: append([]byte(nil), hash.Digest...),
 		ValidatorUpdates: validatorUpdates}, nil
 }
@@ -202,6 +225,11 @@ func (app *Application) Commit(context.Context, *abci.CommitRequest) (*abci.Comm
 	defer app.mu.Unlock()
 	if app.pending == nil {
 		return nil, fmt.Errorf("application invariant: commit without pending block")
+	}
+	if app.observer != nil {
+		if err := app.observer(app.pending.state, app.pending.height, app.pending.txs); err != nil {
+			return nil, fmt.Errorf("persist committed application state: %w", err)
+		}
 	}
 	app.committed = app.pending.state
 	app.height = app.pending.height

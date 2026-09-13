@@ -1,3 +1,2 @@
-// Package api will expose the versioned local /api/v1 Node API. No API routes
-// or fake responses are implemented in Phase 1.
+// Package api exposes the bounded, versioned local ZION node HTTP API.
 package api

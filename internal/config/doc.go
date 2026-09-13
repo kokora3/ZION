@@ -1,3 +1,2 @@
-// Package config will load and validate human-readable node configuration. No
-// configuration parser or validation behavior is implemented in Phase 1.
+// Package config loads and validates local, non-consensus node configuration.
 package config

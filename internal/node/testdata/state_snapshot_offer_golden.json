@@ -1,0 +1,11 @@
+{
+  "fixture_notice": "TEST ONLY - PUBLIC FIXTURE - NEVER USE IN PRODUCTION",
+  "schema_version": 1,
+  "protocol_id": "/zion/state/0.1.0",
+  "network_id": "zion-alpha-1",
+  "network_fingerprint_hex": "d0c241c666234a5cb8b037d4fafed1cac64a35bc1a91a2a4698bed5e9c45d79e",
+  "height": 0,
+  "state_hash": "zion:state:sha256:52b47af40a8068309bcd792303d8afb1b09ee3687a930d45d9692d64ed7c0505",
+  "canonical_state_cbor_hex": "a50101026c7a696f6e2d616c7068612d310363302e3104800580",
+  "canonical_cbor_hex": "a60101026c7a696f6e2d616c7068612d3103a20166736861323536025820d0c241c666234a5cb8b037d4fafed1cac64a35bc1a91a2a4698bed5e9c45d79e040005a2016673686132353602582052b47af40a8068309bcd792303d8afb1b09ee3687a930d45d9692d64ed7c050506581aa50101026c7a696f6e2d616c7068612d310363302e3104800580"
+}

@@ -1,6 +1,8 @@
-# Phase 7 operational example. It contains no private keys and is not canonical state.
+# Phase 8 local runtime example. It contains no private keys and is not canonical state.
 network_id: zion-alpha-1
+genesis_id: <verified-64-character-lowercase-genesis-sha256>
 data_directory: <set-a-local-data-directory>
+roles: [NORMAL]
 p2p:
   enabled: true
   # Separate from the CometBFT validator P2P port.
@@ -13,19 +15,23 @@ p2p:
   manual_peers: []
   peer_key_path: <data-directory>/p2p/peer.key
   peer_cache_path: <data-directory>/p2p/peers.json
-  roles: [NORMAL] # May also include VALIDATOR and/or BOOTSTRAP as capability hints.
   max_connected_peers: 64
   target_outbound_peers: 12
   max_concurrent_dials: 8
   max_cached_peers: 256
   max_addresses_per_peer: 8
   max_pex_peers_per_response: 32
-cometbft:
+api:
+  listen: 127.0.0.1:42001
+  allowed_origins: []
+  bearer_token_file: "" # Required by the implementation for non-loopback binding.
+consensus:
+  # Set enabled: true together with a VALIDATOR role. The root must already
+  # contain the matching CometBFT genesis, private-validator, and node-key files.
+  enabled: false
+  root_directory: <data-directory>/consensus
+  moniker: ""
   p2p_listen_address: tcp://0.0.0.0:26656
-max_peers: 64
-max_storage_gb: <set-before-use>
-reserve_free_gb: <set-before-use>
-download_limit_mbps: <set-before-use>
-upload_limit_mbps: <set-before-use>
-api_bind_address: 127.0.0.1
-validator_enabled: false # This never grants validator authority by itself.
+  persistent_peers: ""
+  rpc_listen_address: "" # The supported local API is the versioned API above.
+  create_empty_blocks: false

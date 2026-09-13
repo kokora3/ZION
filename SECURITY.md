@@ -59,3 +59,15 @@ Peer-cache JSON is bounded local operational state. Its timestamps and dial fail
 ZION-owned hello and PEX frames have fixed size, count, nesting, role, PeerID, and multiaddr bounds. Non-canonical or malformed input is rejected without promotion to the usable peer set. Connected peers, concurrent dials, cache records, addresses, retries, and PEX output are bounded; contexts, deadlines, and capped backoff prevent immediate unbounded redial loops. These measures reduce denial-of-service risk but do not provide Sybil resistance.
 
 An outbound-only NORMAL node can participate without public inbound reachability. Phase 7 deliberately does not provide AutoNAT, hole punching, DCUtR, UPnP, NAT-PMP, relay, TURN, or DHT behavior and makes no universal NAT-connectivity or anonymity claim.
+
+## Phase 8 runtime, persistence, sync, and API boundaries
+
+The versioned local API binds to loopback by default. Non-loopback binding requires explicit bearer authentication and should additionally use firewall and TLS controls. Wildcard CORS is forbidden. API responses and logs never include member, P2P, validator, or bearer-token secrets, and the three key domains remain separate.
+
+The API accepts only bounded base64 wrappers around existing canonical signed transaction bytes. It has no administrator endpoint for membership, governance, or validator changes. Local decode, relay, or CometBFT CheckTx acceptance is not finality; only committed observation is FINALIZED.
+
+Application snapshots store exact canonical state bytes in a separate versioned local envelope bound to NetworkID, GenesisID, accepted height, and recomputed StateHash. Input is bounded and corruption or incompatibility fails closed without an automatic destructive reset. CometBFT database files remain a distinct engine concern.
+
+Normal-node state sync authenticates the transport peer and verifies network, GenesisID, canonical encoding, height, and StateHash before atomic persistence and in-memory promotion. It rejects rollback and equal-height conflicts and never overwrites an active validator from general P2P. This alpha mechanism is not a Byzantine-safe light client: a hash-valid snapshot plus authenticated peer does not independently prove consensus finality.
+
+State-sync frames, relay frames, API bodies, concurrent handlers, recent transaction records, sync/relay handlers, timeouts, and shutdown are bounded. Runtime lifecycle cancellation cleans up partial startup. Operational height, sync status, API settings, transaction cache, and filesystem metadata never enter canonical StateHash.

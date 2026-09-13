@@ -9,6 +9,7 @@ require (
 	github.com/multiformats/go-multiaddr v0.16.1
 	golang.org/x/sync v0.22.0
 	golang.org/x/text v0.40.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -142,6 +143,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241202173237-19429a94021a // indirect
 	google.golang.org/grpc v1.70.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
