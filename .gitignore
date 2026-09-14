@@ -17,6 +17,13 @@ profile.cov
 .gocache*
 .gomodcache*
 
+# Repository-local build and release outputs
+/build/
+/dist/
+/.build/
+/.phase13-build/
+/bin/
+
 # Optional local-built binaries without extension
 /zion-node
 /zionctl
@@ -29,10 +36,22 @@ profile.cov
 /zion-data/
 /.zion/
 
+# Runtime identity, signing, cache, and snapshot files. Public protocol
+# fixtures use distinct filenames under testdata.
+**/peer.key
+**/peers.json
+**/node_key.json
+**/priv_validator_key.json
+**/priv_validator_state.json
+**/application.snapshot
+**/application.snapshot.previous
+**/*.import.lock
+
 # Temporary runtime/test directories
 /tmp/
 /temp/
 *.tmp
+*.pid
 
 
 # --------------------------------------------------
@@ -52,6 +71,10 @@ mem.prof
 .env.*
 !.env.example
 !.env.sample
+*.key
+*.pem
+*.p12
+*.pfx
 
 
 # --------------------------------------------------
@@ -76,6 +99,14 @@ go.work.sum
 .DS_Store
 Thumbs.db
 desktop.ini
+*.stackdump
+
+
+# --------------------------------------------------
+# Generic tool caches / coverage directories
+# --------------------------------------------------
+.cache/
+coverage/
 apps/web/node_modules/
 apps/web/.next/
 apps/web/playwright-report/
