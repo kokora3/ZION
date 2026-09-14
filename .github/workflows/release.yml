@@ -1,0 +1,70 @@
+name: Prepare GitHub Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (vMAJOR.MINOR.PATCH-alpha.N)
+        required: true
+        default: v0.1.0-alpha.1
+      publish:
+        description: Attach assets to an existing matching tag release
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+        working-directory: apps/web
+      - name: Validate and package
+        shell: pwsh
+        run: |
+          go vet ./...
+          go test ./...
+          ./scripts/build-release.ps1 -Version '${{ inputs.version }}'
+          ./scripts/verify-release.ps1 -ReleaseDirectory 'dist/zion-${{ inputs.version }}'
+      - uses: actions/upload-artifact@v6
+        with:
+          name: zion-${{ inputs.version }}-release-assets
+          path: |
+            dist/zion-${{ inputs.version }}/*.zip
+            dist/zion-${{ inputs.version }}/*.tar.gz
+            dist/zion-${{ inputs.version }}/SHA256SUMS
+            dist/zion-${{ inputs.version }}/GO-MODULES.txt
+            dist/zion-${{ inputs.version }}/WEB-DEPENDENCIES.json
+          if-no-files-found: error
+
+  publish:
+    if: ${{ inputs.publish && startsWith(github.ref, 'refs/tags/v') && github.ref_name == inputs.version }}
+    needs: packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: zion-${{ inputs.version }}-release-assets
+          path: assets
+      - name: Attach to deliberate tagged release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create '${{ inputs.version }}' assets/* --verify-tag --title 'ZION ${{ inputs.version }}' --generate-notes
+

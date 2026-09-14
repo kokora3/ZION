@@ -1,0 +1,120 @@
+name: zion
+
+x-zion-node: &zion-node
+  image: zion-node:v0.1.0-alpha.1
+  platform: linux/amd64
+  build:
+    context: .
+    dockerfile: deploy/docker/zion-node.Dockerfile
+    args:
+      VERSION: v0.1.0-alpha.1
+      REVISION: ${ZION_REVISION:-local}
+      BUILD_DATE: ${ZION_BUILD_DATE:-unknown}
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 20s
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - zion-internal
+
+services:
+  zion-node-normal:
+    <<: *zion-node
+    profiles: [normal]
+    container_name: zion-node-normal
+    volumes:
+      - zion-normal-data:/var/lib/zion
+      - ./deploy/compose/configs/normal.yaml:/etc/zion/zion.yaml:ro
+    ports:
+      - "42000:42000/udp"
+      - "127.0.0.1:42001:42001/tcp"
+    healthcheck:
+      test: [CMD, zionctl, --bearer-token-file, /var/lib/zion/runtime/api-token, status]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  zion-node-bootstrap:
+    <<: *zion-node
+    profiles: [bootstrap]
+    container_name: zion-node-bootstrap
+    volumes:
+      - zion-bootstrap-data:/var/lib/zion
+      - ./deploy/compose/configs/bootstrap.yaml:/etc/zion/zion.yaml:ro
+    ports:
+      - "42000:42000/udp"
+      - "127.0.0.1:42001:42001/tcp"
+    healthcheck:
+      test: [CMD, zionctl, --bearer-token-file, /var/lib/zion/runtime/api-token, status]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  zion-node-validator:
+    <<: *zion-node
+    profiles: [validator]
+    container_name: zion-node-validator
+    volumes:
+      - zion-validator-data:/var/lib/zion
+      - ${ZION_VALIDATOR_CONFIG:-./deploy/compose/configs/validator.yaml.example}:/etc/zion/zion.yaml:ro
+    ports:
+      - "42000:42000/udp"
+      - "26656:26656/tcp"
+      - "127.0.0.1:42001:42001/tcp"
+    healthcheck:
+      test: [CMD, zionctl, --bearer-token-file, /var/lib/zion/runtime/api-token, status]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+
+  zion-web:
+    image: zion-web:v0.1.0-alpha.1
+    platform: linux/amd64
+    profiles: [web]
+    build:
+      context: .
+      dockerfile: deploy/docker/zion-web.Dockerfile
+      args:
+        VERSION: v0.1.0-alpha.1
+        REVISION: ${ZION_REVISION:-local}
+        BUILD_DATE: ${ZION_BUILD_DATE:-unknown}
+        NEXT_PUBLIC_ZION_API_URL: http://127.0.0.1:42001
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=64m,mode=0755,uid=1000,gid=1000
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - zion-internal
+    ports:
+      - "127.0.0.1:3000:3000/tcp"
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+networks:
+  zion-internal:
+    driver: bridge
+    internal: false
+
+volumes:
+  zion-normal-data:
+  zion-bootstrap-data:
+  zion-validator-data:

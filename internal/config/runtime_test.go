@@ -38,6 +38,52 @@ func TestAllAlphaExampleConfigsParseStrictly(t *testing.T) {
 	}
 }
 
+func TestD1DistributionConfigsAreStrictAndSafe(t *testing.T) {
+	root := filepath.Join("..", "..")
+	portable := []struct {
+		name  string
+		roles []p2p.Role
+	}{
+		{name: "normal.yaml", roles: []p2p.Role{p2p.RoleNormal}},
+		{name: "bootstrap.yaml", roles: []p2p.Role{p2p.RoleNormal, p2p.RoleBootstrap}},
+	}
+	for _, profile := range portable {
+		t.Run(profile.name, func(t *testing.T) {
+			file, err := Load(filepath.Join(root, "configs", "alpha-1", profile.name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := file.RuntimeConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(cfg.P2P.Roles) != len(profile.roles) {
+				t.Fatalf("roles = %v", cfg.P2P.Roles)
+			}
+			for index := range profile.roles {
+				if cfg.P2P.Roles[index] != profile.roles[index] {
+					t.Fatalf("roles = %v", cfg.P2P.Roles)
+				}
+			}
+			if cfg.ConsensusFactory != nil || cfg.FreshStateIsAuthoritative {
+				t.Fatal("non-validator distribution config enabled consensus authority")
+			}
+		})
+	}
+
+	strictOnly := []string{
+		filepath.Join(root, "configs", "alpha-1", "validator.yaml.example"),
+		filepath.Join(root, "deploy", "compose", "configs", "normal.yaml"),
+		filepath.Join(root, "deploy", "compose", "configs", "bootstrap.yaml"),
+		filepath.Join(root, "deploy", "compose", "configs", "validator.yaml.example"),
+	}
+	for _, path := range strictOnly {
+		if _, err := Load(path); err != nil {
+			t.Fatalf("strict load %s: %v", path, err)
+		}
+	}
+}
+
 func TestRuntimeConfigNormalAndValidatorComposition(t *testing.T) {
 	fingerprint := protocol.HashBytes([]byte("phase-8-config-normal"))
 	normal := File{NetworkID: string(protocol.Alpha1NetworkID), GenesisID: hex.EncodeToString(fingerprint.Digest),

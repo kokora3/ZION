@@ -133,3 +133,10 @@ Structured JSON logs and Prometheus metrics are local operational output. Log le
 The alpha packages are not code-signed and do not provide a secure auto-update channel. Verify SHA-256 manifests through an appropriately trusted distribution path. Dependency/license inventory and vulnerability scanning reduce known supply-chain risk but are not formal assurance or legal advice.
 
 Final v0.1 limitations remain explicit: general state sync is not a Byzantine light client; Board/object data is public and may persist or disappear independently; registry admission is not a safety guarantee and never authorizes execution; bootstrap/PEX cannot grant authority; no central database/admin exists; key recovery is operator-managed; and `zion-alpha-1` may reset with an explicit migration boundary.
+# Distribution and container boundary
+
+D1 container images contain no member, P2P, API bearer, or validator private secrets. P2P identity and the Compose API token are created at runtime in persistent storage; validator genesis/key/state and node key are provisioned externally. `/var/lib/zion` remains outside the replaceable container, while configuration is mounted read-only at `/etc/zion/zion.yaml`.
+
+Compose publishes the API/metrics and Web ports only on host loopback by default. A bootstrap profile publishes general P2P UDP only; a validator additionally publishes CometBFT P2P TCP and keeps RPC disabled. Remote API exposure still requires bearer authentication, exact CORS, firewalling, and TLS. The public Web bundle receives only `NEXT_PUBLIC_ZION_API_URL`, never a token or private key.
+
+The node runtime uses non-root UID/GID 10001, a read-only root filesystem, bounded tmpfs, no added Linux capabilities, and `no-new-privileges`; it is never privileged and uses neither host PID nor host networking. Docker is packaging and process isolation, not a protocol trust boundary. A profile cannot grant membership, bootstrap truth, governance rights, or validator authority. Named volumes are role-specific, and operators must never mount one mutable directory into concurrent nodes.

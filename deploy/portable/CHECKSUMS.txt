@@ -1,0 +1,2 @@
+Verify the outer ZIP or tar.gz against SHA256SUMS distributed alongside the release. This file is a reminder, not a signature.
+

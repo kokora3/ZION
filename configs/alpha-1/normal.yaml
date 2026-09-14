@@ -1,0 +1,50 @@
+# Portable local NORMAL preset. This starts a self-contained local alpha node.
+# Replace genesis_id and bootstrap_addresses with operator-verified values before
+# joining a shared zion-alpha-1 deployment.
+network_id: zion-alpha-1
+genesis_id: 4cce10c9eb93aa5baff6ec94b13ff27662464668764a39efed6d59373a487d55
+data_directory: data/normal
+log_level: INFO
+roles: [NORMAL]
+p2p:
+  enabled: true
+  listen_addresses: [/ip4/0.0.0.0/udp/42000/quic-v1]
+  bootstrap_addresses: []
+  fallback_addresses: []
+  manual_peers: []
+  peer_key_path: data/normal/p2p/peer.key
+  peer_cache_path: data/normal/p2p/peers.json
+  max_connected_peers: 64
+  target_outbound_peers: 12
+  max_concurrent_dials: 8
+  max_cached_peers: 256
+  max_addresses_per_peer: 8
+  max_pex_peers_per_response: 32
+api:
+  listen: 127.0.0.1:42001
+  metrics_enabled: true
+  allowed_origins: [http://127.0.0.1:3000]
+  bearer_token_file: ""
+objects:
+  directory: data/normal/objects
+  quota_bytes: 1073741824
+board:
+  enabled: true
+  index_path: data/normal/board/index.json
+  announce_fanout: 8
+  sync_interval: 30s
+  sync_page_size: 16
+  max_sync_events_per_cycle: 256
+  max_concurrent_handlers: 8
+  peer_timeout: 3s
+registries:
+  index_path: data/normal/registries/index.json
+consensus:
+  enabled: false
+  root_directory: ""
+  moniker: ""
+  p2p_listen_address: ""
+  persistent_peers: ""
+  rpc_listen_address: ""
+  create_empty_blocks: false
+

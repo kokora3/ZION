@@ -1,0 +1,48 @@
+# Docker BOOTSTRAP preset. BOOTSTRAP provides discovery, never authority.
+network_id: zion-alpha-1
+genesis_id: 4cce10c9eb93aa5baff6ec94b13ff27662464668764a39efed6d59373a487d55
+data_directory: /var/lib/zion
+log_level: INFO
+roles: [NORMAL, BOOTSTRAP]
+p2p:
+  enabled: true
+  listen_addresses: [/ip4/0.0.0.0/udp/42000/quic-v1]
+  bootstrap_addresses: []
+  fallback_addresses: []
+  manual_peers: []
+  peer_key_path: /var/lib/zion/p2p/peer.key
+  peer_cache_path: /var/lib/zion/p2p/peers.json
+  max_connected_peers: 128
+  target_outbound_peers: 16
+  max_concurrent_dials: 8
+  max_cached_peers: 512
+  max_addresses_per_peer: 8
+  max_pex_peers_per_response: 32
+api:
+  listen: 0.0.0.0:42001
+  metrics_enabled: true
+  allowed_origins: []
+  bearer_token_file: /var/lib/zion/runtime/api-token
+objects:
+  directory: /var/lib/zion/objects
+  quota_bytes: 1073741824
+board:
+  enabled: true
+  index_path: /var/lib/zion/board/index.json
+  announce_fanout: 8
+  sync_interval: 30s
+  sync_page_size: 16
+  max_sync_events_per_cycle: 256
+  max_concurrent_handlers: 8
+  peer_timeout: 3s
+registries:
+  index_path: /var/lib/zion/registries/index.json
+consensus:
+  enabled: false
+  root_directory: ""
+  moniker: ""
+  p2p_listen_address: ""
+  persistent_peers: ""
+  rpc_listen_address: ""
+  create_empty_blocks: false
+

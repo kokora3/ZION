@@ -67,3 +67,35 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
+
+  distribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate Compose model
+        run: docker compose --profile normal --profile bootstrap --profile validator --profile web config --quiet
+      - name: Build production images
+        env:
+          ZION_REVISION: ${{ github.sha }}
+          ZION_BUILD_DATE: "1970-01-01T00:00:00Z"
+        run: docker compose --profile normal --profile web build zion-node-normal zion-web
+      - name: Start NORMAL and Web
+        run: docker compose --profile normal --profile web up -d
+      - name: Wait for NORMAL health
+        shell: bash
+        run: |
+          for attempt in $(seq 1 24); do
+            state=$(docker inspect --format '{{.State.Health.Status}}' zion-node-normal 2>/dev/null || true)
+            [ "$state" = healthy ] && exit 0
+            [ "$state" = unhealthy ] && docker compose logs && exit 1
+            sleep 5
+          done
+          docker compose logs
+          exit 1
+      - name: Container status and Web smoke
+        run: |
+          docker compose exec -T zion-node-normal zionctl --bearer-token-file /var/lib/zion/runtime/api-token status
+          curl --fail --retry 12 --retry-delay 2 http://127.0.0.1:3000/
+      - name: Clean shutdown
+        if: always()
+        run: docker compose down --volumes --remove-orphans

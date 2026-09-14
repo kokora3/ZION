@@ -12,6 +12,26 @@ Phase 11 adds immutable, content-derived ResearchID and ResourceID records after
 
 ZION Web is a presentation client, not a node or wallet. It talks directly from the browser to the local loopback `/v1` API, has no central production database/backend, and never requests member private keys. The current safe mutation workflow submits already-signed canonical transactions and Board events produced by local tooling.
 
+## Download and run
+
+| Want to… | Use |
+|---|---|
+| Run ZION on Windows | Download the Windows amd64 ZIP, verify it, extract it, and run `run-zion-node.cmd` |
+| Run a Linux server | Download the Linux amd64 tar.gz or use Docker Compose |
+| Run a bootstrap node | `docker compose --profile bootstrap up -d` |
+| Run a configured validator | Provision canonical validator files, then `docker compose --profile validator up -d` |
+| Develop ZION | Clone this repository and use the development commands below |
+
+`git clone` is for developers, not ordinary binary users. Portable packages include the binaries, safe local presets, startup helper, license, and operator documentation. The bundled local GenesisID is not a public-network trust assertion; replace it and bootstrap addresses with operator-verified values before joining a shared alpha deployment.
+
+Docker users can start the optional local Web client with:
+
+```text
+docker compose --profile normal --profile web up -d
+```
+
+The node API and Web publish only to host loopback by default. See [the Docker guide](docs/guides/docker.md), [Windows installation](docs/guides/install-windows.md), and [Linux installation](docs/guides/install-linux.md).
+
 ## Development
 
 Requires Go 1.27 or newer.

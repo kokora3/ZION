@@ -35,7 +35,7 @@ function Build-Package([string]$GoOS, [string]$GoArch, [string]$Suffix) {
   New-Item -ItemType Directory -Force -Path $Stage | Out-Null
   $env:GOOS = $GoOS
   $env:GOARCH = $GoArch
-  $env:CGO_ENABLED = if ($GoOS -eq "windows") { "1" } else { "0" }
+  $env:CGO_ENABLED = "0"
   go build -trimpath -ldflags $LdFlags -o (Join-Path $Stage "zion-node$Suffix") ./cmd/zion-node
   if ($LASTEXITCODE -ne 0) { throw "zion-node $GoOS/$GoArch build failed" }
   go build -trimpath -ldflags $LdFlags -o (Join-Path $Stage "zionctl$Suffix") ./cmd/zionctl
@@ -44,14 +44,47 @@ function Build-Package([string]$GoOS, [string]$GoArch, [string]$Suffix) {
   Copy-Item -LiteralPath (Join-Path $Repository "LICENSE") -Destination $Stage
   Copy-Item -LiteralPath (Join-Path $Repository "SECURITY.md") -Destination $Stage
   New-Item -ItemType Directory -Force -Path (Join-Path $Stage "configs"), (Join-Path $Stage "docs") | Out-Null
-  Copy-Item -LiteralPath (Join-Path $Repository "configs\alpha-1") -Destination (Join-Path $Stage "configs\alpha-1") -Recurse
+  foreach ($Config in @("normal.yaml", "bootstrap.yaml", "validator.yaml.example")) {
+    Copy-Item -LiteralPath (Join-Path $Repository "configs\alpha-1\$Config") -Destination (Join-Path $Stage "configs\$Config")
+  }
   Copy-Item -LiteralPath (Join-Path $Repository "docs\operations") -Destination (Join-Path $Stage "docs\operations") -Recurse
+  New-Item -ItemType Directory -Force -Path (Join-Path $Stage "docs\guides") | Out-Null
+  foreach ($Guide in @("install-windows.md", "install-linux.md", "docker.md")) {
+    Copy-Item -LiteralPath (Join-Path $Repository "docs\guides\$Guide") -Destination (Join-Path $Stage "docs\guides\$Guide")
+  }
+  Copy-Item -LiteralPath (Join-Path $Repository "deploy\portable\CHECKSUMS.txt") -Destination $Stage
+  if ($GoOS -eq "windows") {
+    Copy-Item -LiteralPath (Join-Path $Repository "deploy\portable\run-zion-node.cmd") -Destination $Stage
+    Copy-Item -LiteralPath (Join-Path $Repository "deploy\portable\README-WINDOWS.md") -Destination $Stage
+  } else {
+    Copy-Item -LiteralPath (Join-Path $Repository "deploy\portable\run-zion-node.sh") -Destination $Stage
+    Copy-Item -LiteralPath (Join-Path $Repository "deploy\portable\README-LINUX.md") -Destination $Stage
+  }
   @("version=$Version", "commit=$Commit", "build_date=$BuildDate", "go_version=$(go version)") | Set-Content -LiteralPath (Join-Path $Stage "BUILDINFO") -Encoding utf8
   if ($GoOS -eq "windows") {
     Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath (Join-Path $ReleaseRoot "$Name.zip") -CompressionLevel Optimal
   } else {
-    tar -C $Stage -czf (Join-Path $ReleaseRoot "$Name.tar.gz") .
-    if ($LASTEXITCODE -ne 0) { throw "Linux archive creation failed" }
+    # Windows filesystems do not carry Unix execute bits. An mtree input lets
+    # bsdtar emit deterministic, runnable Linux permissions without WSL.
+    $Mtree = Join-Path $ReleaseRoot ".$Name.mtree"
+    $Lines = @("#mtree", ". type=dir mode=0755 uid=0 gid=0")
+    foreach ($Directory in Get-ChildItem -LiteralPath $Stage -Recurse -Directory | Sort-Object FullName) {
+      $Relative = [System.IO.Path]::GetRelativePath($Stage, $Directory.FullName).Replace('\', '/')
+      $Lines += "./$Relative type=dir mode=0755 uid=0 gid=0"
+    }
+    foreach ($File in Get-ChildItem -LiteralPath $Stage -Recurse -File | Sort-Object FullName) {
+      $Relative = [System.IO.Path]::GetRelativePath($Stage, $File.FullName).Replace('\', '/')
+      $Content = $File.FullName.Replace('\', '/')
+      $Mode = if ($File.Name -in @("zion-node", "zionctl", "run-zion-node.sh")) { "0755" } else { "0644" }
+      $Lines += "./$Relative type=file mode=$Mode uid=0 gid=0 content=$Content"
+    }
+    $Lines | Set-Content -LiteralPath $Mtree -Encoding ascii
+    try {
+      tar -czf (Join-Path $ReleaseRoot "$Name.tar.gz") --format pax "@$Mtree"
+      if ($LASTEXITCODE -ne 0) { throw "Linux archive creation failed" }
+    } finally {
+      Remove-Item -LiteralPath $Mtree -Force -ErrorAction SilentlyContinue
+    }
   }
 }
 

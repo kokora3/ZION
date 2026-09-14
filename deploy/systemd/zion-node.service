@@ -1,0 +1,28 @@
+[Unit]
+Description=ZION v0.1 alpha node
+Documentation=https://github.com/kokora3/zion
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zion
+Group=zion
+WorkingDirectory=/var/lib/zion
+ExecStart=/usr/local/bin/zion-node run --config /etc/zion/zion.yaml --data-dir /var/lib/zion
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/zion
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
+
