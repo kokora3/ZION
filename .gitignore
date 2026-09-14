@@ -76,3 +76,10 @@ go.work.sum
 .DS_Store
 Thumbs.db
 desktop.ini
+apps/web/node_modules/
+apps/web/.next/
+apps/web/playwright-report/
+apps/web/test-results/
+apps/web/coverage/
+apps/web/.e2e/
+apps/web/tsconfig.tsbuildinfo

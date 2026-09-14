@@ -23,7 +23,9 @@ p2p:
   max_pex_peers_per_response: 32
 api:
   listen: 127.0.0.1:42001
-  allowed_origins: []
+  # Exact local ZION Web origin; never use a wildcard.
+  allowed_origins:
+    - http://127.0.0.1:3000
   bearer_token_file: "" # Required by the implementation for non-loopback binding.
 objects:
   # Local off-chain storage. Neither this path nor quota enters StateHash/AppHash.

@@ -587,8 +587,14 @@ func (r *Runtime) Identity(value string) (any, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
+	activeKeyID := ""
+	for keyID, active := range stored.Active {
+		if active && (activeKeyID == "" || keyID < activeKeyID) {
+			activeKeyID = keyID
+		}
+	}
 	return map[string]any{"identity_id": stored.ID.String(), "sequence": stored.Sequence, "revoked": stored.Revoked,
-		"key_count": len(stored.Keys), "membership": r.state.Memberships[id.String()]}, true, nil
+		"key_count": len(stored.Keys), "active_key_id": activeKeyID, "membership": r.state.Memberships[id.String()]}, true, nil
 }
 
 func (r *Runtime) Membership(value string) (any, bool, error) {
@@ -617,7 +623,11 @@ func (r *Runtime) Proposals(offset, limit int) (any, error) {
 		offset = len(snapshot.Proposals)
 	}
 	end := min(len(snapshot.Proposals), offset+limit)
-	return snapshot.Proposals[offset:end], nil
+	result := make([]GovernanceProposalView, end-offset)
+	for position, proposal := range snapshot.Proposals[offset:end] {
+		result[position] = governanceProposalView(proposal)
+	}
+	return result, nil
 }
 
 func (r *Runtime) Proposal(value string) (any, bool, error) {
@@ -641,7 +651,7 @@ func (r *Runtime) Proposal(value string) (any, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	return snapshot.Proposals[0], true, nil
+	return governanceProposalView(snapshot.Proposals[0]), true, nil
 }
 
 func (r *Runtime) Transaction(value string) (any, bool, error) {

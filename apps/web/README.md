@@ -1,5 +1,5 @@
 # ZION Web
 
-ZION Web will be a Next.js client of the local ZION Node API. It does not own authoritative protocol state and the ZION protocol does not require a central production database.
+Official, replaceable local-node client for `zion-alpha-1`. The browser talks directly to the configured `zion-node` `/v1` API. It contains no chain, signature, identifier, or P2P authority and requires no central database.
 
-No Next.js application is initialized during Phase 1.
+See `docs/guides/zion-web.md` for local setup and security boundaries.

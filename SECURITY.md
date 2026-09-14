@@ -109,3 +109,15 @@ Apply validates only bounded canonical metadata and reference syntax/existence i
 ObjectID references establish content identity, not safety, endorsement, availability, or permission to execute. Registered repositories and tools are never cloned, installed, updated, or executed automatically. Governance admission is curation; it is not a malware-free, security-audited, academically peer-reviewed, or permanently available guarantee.
 
 Canonical registry references are governance-approved chain metadata. Board Research/Resource references remain signed off-chain community statements and confer no canonical authority. Registry search indexes and `present_local` hints are replaceable local state; corrupt indexes rebuild from canonical application state without changing consensus.
+
+## Phase 12 web-client boundaries
+
+ZION Web is a replaceable, untrusted client of the local versioned API, not protocol authority. It does not implement or decide canonical encoding, identifiers, signatures, membership, governance, finality, Board admission, validator authorization, or P2P behavior. It requires no central database, hosted application API, analytics, advertising, session replay, or telemetry, and it never sends PeerID, IdentityID, status, or governance activity to a third party.
+
+The browser never asks for, receives, logs, or stores member private keys or seeds. No secret may enter `NEXT_PUBLIC_*`, localStorage, or IndexedDB. Because the current runtime has no safe general member signer API, Board and governance mutations accept only already-signed canonical public payloads through existing node routes. A future node-mediated signer must remain local, enforce current authorization, and never return private keys.
+
+The Phase 8 API remains loopback-only by default. Explicit remote mode retains bearer authentication, exact-origin CORS, firewall, and TLS responsibilities. Bearer tokens are not placed in URLs, logs, or public build variables; the official client keeps an optional token in session storage only and warns that browser-origin code can access it. Public HTTPS pages may be unable to call local HTTP because of mixed-content and private-network restrictions, so local Web plus local node is the supported alpha path.
+
+Board text and all public metadata are untrusted. The client renders Board markup as text, enables no raw HTML, uses no untrusted `dangerouslySetInnerHTML`, and does not auto-load remote images. External registry links require explicit HTTPS navigation, expose the hostname, and use `noopener noreferrer`. Governance registration of a Resource is curation, not proof that a tool, repository, or model is safe to run; the client provides no Run or Install action.
+
+Local hide is not deletion, client cache is not canonical, and disconnected data is labeled stale. Content may persist on independent nodes while local availability may disappear. Request timeout/cancellation, bounded pagination, restrictive response headers, and an explicit CSP reduce browser and resource risk, but are not claims of formal verification, anonymity, content safety, or permanent availability.
