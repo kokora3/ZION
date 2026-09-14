@@ -22,7 +22,9 @@ read_env_value() {
 }
 
 load_setting() {
-  local key="$1" default_value="${2-}" current_value="${!key-}"
+  local key="$1"
+  local default_value="${2-}"
+  local current_value="${!key-}"
   if [[ -z "$current_value" ]]; then
     current_value="$(read_env_value "$key")"
   fi
