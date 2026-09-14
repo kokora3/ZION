@@ -25,6 +25,56 @@ func firstFullAddress(t testing.TB, node *Node) string {
 	return addresses[0].String()
 }
 
+func TestExplicitAdvertiseAddressSeparatesPublicLocationFromBindAddress(t *testing.T) {
+	cfg := testConfig(t, "public-bootstrap", true)
+	cfg.AdvertiseAddresses = []string{"/dns4/bootstrap.public.test/udp/42000/quic-v1"}
+	node, err := NewNode(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peerID := node.PeerID()
+	if got := node.AdvertisedAddresses(); len(got) != 1 || got[0].String() != cfg.AdvertiseAddresses[0] {
+		t.Fatalf("advertised addresses = %v", got)
+	}
+	if got := node.ListenAddresses(); len(got) == 0 || !strings.Contains(got[0].String(), "/ip4/127.0.0.1/udp/") {
+		t.Fatalf("bind addresses = %v", got)
+	}
+	wantFull := cfg.AdvertiseAddresses[0] + "/p2p/" + peerID.String()
+	if got := node.FullAddresses(); len(got) != 1 || got[0].String() != wantFull {
+		t.Fatalf("bootstrap multiaddr = %v, want %s", got, wantFull)
+	}
+	if hello := node.localHello(); len(hello.AdvertisedAddresses) != 1 || hello.AdvertisedAddresses[0] != cfg.AdvertiseAddresses[0] {
+		t.Fatalf("hello advertised addresses = %v", hello.AdvertisedAddresses)
+	}
+	if err := node.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := NewNode(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	if restarted.PeerID() != peerID {
+		t.Fatal("PeerID changed when the container-equivalent process was recreated")
+	}
+}
+
+func TestAdvertiseAddressRejectsPrivateOrNonQUICLocations(t *testing.T) {
+	for _, value := range []string{
+		"/ip4/172.18.0.2/udp/42000/quic-v1",
+		"/ip4/127.0.0.1/udp/42000/quic-v1",
+		"/ip4/224.0.0.1/udp/42000/quic-v1",
+		"/dns4/bootstrap.public.test/tcp/42000",
+		"/dns4/bootstrap.public.test/udp/42000/quic-v1/p2p/12D3KooWJwD7fD4sU4fFjPsW6jtu2u1V5R1tv3cD59CKGwR6kTRm",
+	} {
+		cfg := testConfig(t, "invalid-advertise", false)
+		cfg.AdvertiseAddresses = []string{value}
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("unsafe advertised address accepted: %s", value)
+		}
+	}
+}
+
 func waitUsable(t testing.TB, node *Node, peerID libpeer.ID, expected bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

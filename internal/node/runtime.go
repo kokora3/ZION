@@ -137,21 +137,11 @@ type Runtime struct {
 }
 
 func New(cfg Config) (*Runtime, error) {
-	if cfg.NetworkID == "" || cfg.GenesisID.Validate() != nil || cfg.StatePath == "" || cfg.InitialHeight < 0 ||
-		cfg.InitialState.NetworkID != cfg.NetworkID || cfg.ShutdownTimeout <= 0 || cfg.RecentTransactions < 1 ||
-		cfg.SyncInterval < 100*time.Millisecond || cfg.SyncInterval > time.Hour || cfg.SyncTimeout <= 0 || cfg.SyncTimeout > time.Minute ||
-		cfg.RecentTransactions > 10000 || cfg.MaxRelayHandlers < 1 || cfg.MaxRelayHandlers > 128 ||
-		cfg.MaxSyncHandlers < 1 || cfg.MaxSyncHandlers > 16 || cfg.ObjectDirectory == "" || cfg.BoardIndexPath == "" || cfg.RegistryIndexPath == "" {
-		return nil, fmt.Errorf("invalid node runtime configuration")
-	}
-	if cfg.P2P.NetworkID != cfg.NetworkID || !equalHash(cfg.P2P.NetworkFingerprint, cfg.GenesisID) {
-		return nil, fmt.Errorf("runtime and P2P network identity differ")
+	if err := ValidateConfig(cfg); err != nil {
+		return nil, err
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	}
-	if cfg.Consensus != nil && cfg.ConsensusFactory != nil {
-		return nil, fmt.Errorf("configure either a consensus service or a consensus factory")
 	}
 	initial, err := cloneStateChecked(cfg.InitialState)
 	if err != nil {
@@ -177,6 +167,28 @@ func New(cfg Config) (*Runtime, error) {
 	return &Runtime{cfg: cfg, lifecycle: Created, sync: Uninitialized, store: store, objects: objectStore, boardIndex: boardIndex, registryIndex: registryIndex,
 		relaySem: make(chan struct{}, cfg.MaxRelayHandlers), syncSem: make(chan struct{}, cfg.MaxSyncHandlers),
 		tx: make(map[string]TransactionRecord)}, nil
+}
+
+// ValidateConfig checks runtime configuration without creating files or opening listeners.
+func ValidateConfig(cfg Config) error {
+	if cfg.NetworkID == "" || cfg.GenesisID.Validate() != nil || cfg.StatePath == "" || cfg.InitialHeight < 0 ||
+		cfg.InitialState.NetworkID != cfg.NetworkID || cfg.ShutdownTimeout <= 0 || cfg.RecentTransactions < 1 ||
+		cfg.SyncInterval < 100*time.Millisecond || cfg.SyncInterval > time.Hour || cfg.SyncTimeout <= 0 || cfg.SyncTimeout > time.Minute ||
+		cfg.RecentTransactions > 10000 || cfg.MaxRelayHandlers < 1 || cfg.MaxRelayHandlers > 128 ||
+		cfg.MaxSyncHandlers < 1 || cfg.MaxSyncHandlers > 16 || cfg.ObjectDirectory == "" || cfg.BoardIndexPath == "" || cfg.RegistryIndexPath == "" {
+		return fmt.Errorf("invalid node runtime configuration")
+	}
+	if cfg.P2P.NetworkID != cfg.NetworkID || !equalHash(cfg.P2P.NetworkFingerprint, cfg.GenesisID) {
+		return fmt.Errorf("runtime and P2P network identity differ")
+	}
+	if cfg.Consensus != nil && cfg.ConsensusFactory != nil {
+		return fmt.Errorf("configure either a consensus service or a consensus factory")
+	}
+	_, err := cloneStateChecked(cfg.InitialState)
+	if err != nil {
+		return fmt.Errorf("invalid initial state: %w", err)
+	}
+	return nil
 }
 
 func (r *Runtime) Start(parent context.Context) (err error) {
@@ -551,8 +563,24 @@ func (r *Runtime) Status() any {
 	defer r.mu.RUnlock()
 	hash, _ := r.state.Hash()
 	peerID := ""
+	peerCount, outboundPeers := 0, 0
+	listenAddresses := []string{}
+	advertisedAddresses := []string{}
+	bootstrapMultiaddrs := []string{}
 	if r.p2p != nil {
 		peerID = r.p2p.PeerID().String()
+		peerCount, outboundPeers = r.p2p.ConnectionCounts()
+		for _, address := range r.p2p.ListenAddresses() {
+			listenAddresses = append(listenAddresses, address.String())
+		}
+		for _, address := range r.p2p.AdvertisedAddresses() {
+			advertisedAddresses = append(advertisedAddresses, address.String())
+		}
+		if hasRole(r.cfg.P2P.Roles, p2p.RoleBootstrap) {
+			for _, address := range r.p2p.FullAddresses() {
+				bootstrapMultiaddrs = append(bootstrapMultiaddrs, address.String())
+			}
+		}
 	}
 	consensusActive := r.consensus != nil && r.consensus.Active()
 	objectCount, objectBytes, objectQuota := r.objects.Usage()
@@ -563,7 +591,10 @@ func (r *Runtime) Status() any {
 	}
 	return map[string]any{"network_id": r.cfg.NetworkID, "genesis_id": hex.EncodeToString(r.cfg.GenesisID.Digest),
 		"runtime_state": r.lifecycle, "roles": append([]p2p.Role(nil), r.cfg.P2P.Roles...), "peer_id": peerID,
-		"sync_status": r.sync, "accepted_height": r.height, "state_hash": hash.String(),
+		"peer_count": peerCount, "outbound_peer_count": outboundPeers,
+		"p2p_listen_addresses": listenAddresses, "p2p_advertised_addresses": advertisedAddresses,
+		"bootstrap_multiaddrs": bootstrapMultiaddrs,
+		"sync_status":          r.sync, "accepted_height": r.height, "state_hash": hash.String(),
 		"consensus_active": consensusActive, "validator_authorized": r.validatorAuthorized(r.state),
 		"protocol_version": protocol.CurrentProtocolVersion, "software_version": buildinfo.Version,
 		"build_commit": buildinfo.Commit, "build_date": buildinfo.BuildDate, "object_store_enabled": true,
@@ -574,6 +605,15 @@ func (r *Runtime) Status() any {
 			"max_concurrent_dials": r.cfg.P2P.Limits.MaxConcurrentDials, "recent_transactions": r.cfg.RecentTransactions,
 			"max_sync_snapshot_bytes": MaxSnapshotBytes, "object_max_bytes": objects.MaxObjectBytes,
 			"object_quota_bytes": r.cfg.ObjectQuotaBytes}}
+}
+
+func hasRole(roles []p2p.Role, target p2p.Role) bool {
+	for _, role := range roles {
+		if role == target {
+			return true
+		}
+	}
+	return false
 }
 
 // Metrics returns a bounded-cardinality, non-canonical operational view.

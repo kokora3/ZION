@@ -9,6 +9,7 @@ p2p:
   # Separate from the CometBFT validator P2P port.
   listen_addresses:
     - /ip4/0.0.0.0/udp/42000/quic-v1
+  advertise_addresses: []
   # DNS/IP is location; /p2p/<PeerID> is the expected cryptographic identity.
   bootstrap_addresses:
     - /dns4/bootstrap-zion.kokora.info/udp/42000/quic-v1/p2p/<verified-bootstrap-peer-id>

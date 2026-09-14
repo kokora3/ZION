@@ -35,6 +35,8 @@ Phase 7 explicitly enables libp2p QUIC v1 and disables relay. QUIC supplies encr
 
 After transport authentication, peers open `/zion/hello/0.1.0` and exchange canonical CBOR with a four-byte bounded length prefix. The message contains schema version, `NetworkID`, network fingerprint, a typed supported-version set, operational roles, the self-reported PeerID, and bounded advertised addresses. The reported PeerID must equal the PeerID authenticated by libp2p.
 
+`listen_addresses` controls local socket binding. Optional `advertise_addresses` replaces those locations in libp2p advertisement and must contain bounded DNS/IP UDP QUIC-v1 base multiaddrs without an embedded PeerID; explicit IP values must be publicly routable. The runtime appends its persisted authenticated PeerID when producing full bootstrap multiaddrs. This avoids advertising a Docker-private address while preserving the existing key derivation and Hello authentication boundary.
+
 The network fingerprint is the existing Phase 5 `consensus.Genesis.GenesisID`: SHA-256 of the deterministic application-genesis JSON that binds NetworkID, initial StateHash, and validator-set hash. Phase 7 receives this public digest through local configuration; it does not define or hash a second genesis concept. Same NetworkID with a different digest is rejected.
 
 Version negotiation intersects typed `(major, minor, patch)` values and selects the numerically highest common version. It never uses lexical string ordering and never silently crosses an incompatible major version. The current implementation supports 0.1.0.

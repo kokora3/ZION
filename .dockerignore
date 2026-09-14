@@ -19,6 +19,10 @@ build
 coverage
 data
 deploy/local
+deploy/public-host/.env
+deploy/public-host/backups
+deploy/public-host/data
+deploy/public-host/runtime
 dist
 node_modules
 temp

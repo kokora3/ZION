@@ -34,7 +34,7 @@ func TestSharedAlphaNormalConfigConsumesFrozenGenesis(t *testing.T) {
 	file.DataDirectory = directory
 	file.Roles = []p2p.Role{p2p.RoleNormal}
 	file.P2P.Enabled = &enabled
-	file.P2P.ListenAddresses = nil
+	file.P2P.ListenAddresses = []string{}
 	file.P2P.BootstrapAddresses = nil
 	file.P2P.FallbackAddresses = nil
 	file.P2P.ManualPeers = nil

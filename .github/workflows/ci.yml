@@ -86,6 +86,14 @@ jobs:
           ZION_REVISION: ${{ github.sha }}
           ZION_BUILD_DATE: "1970-01-01T00:00:00Z"
         run: docker compose --profile normal --profile web build zion-node-normal zion-web
+      - name: Validate public-host scripts
+        shell: bash
+        run: |
+          bash -n deploy/public-host/*.sh
+          pwsh -File scripts/verify-distribution.ps1
+      - name: Simulate public NORMAL and BOOTSTRAP deployment
+        shell: bash
+        run: bash deploy/public-host/test.sh
       - name: Start NORMAL and Web
         run: docker compose --profile normal --profile web up -d
       - name: Wait for NORMAL health

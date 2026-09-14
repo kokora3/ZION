@@ -1,0 +1,29 @@
+# Generic public-host concerns only. docker-compose.yml remains canonical D1 ownership.
+services:
+  zion-node-bootstrap:
+    image: ${ZION_IMAGE:?set ZION_IMAGE to an explicit version or digest}
+    command:
+      - zion-node
+      - run
+      - --config
+      - /etc/zion/zion.yaml
+      - --p2p-advertise
+      - ${ZION_PUBLIC_MULTIADDR:?derive ZION_PUBLIC_MULTIADDR with the D2A helpers}
+    volumes: !override
+      - type: bind
+        source: ${ZION_DATA_DIR:-/opt/zion/data}
+        target: /var/lib/zion
+      - type: bind
+        source: ${ZION_CONFIG_DIR:-/opt/zion/config}/bootstrap.yaml
+        target: /etc/zion/zion.yaml
+        read_only: true
+    ports: !override
+      - name: zion-p2p-quic
+        target: 42000
+        published: ${ZION_P2P_PORT:-42000}
+        protocol: udp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

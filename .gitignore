@@ -38,6 +38,10 @@ profile.cov
 /zion-data/
 /.zion/
 /.local/
+/deploy/public-host/.env
+/deploy/public-host/data/
+/deploy/public-host/backups/
+/deploy/public-host/runtime/
 
 # Runtime identity, signing, cache, and snapshot files. Public protocol
 # fixtures use distinct filenames under testdata.

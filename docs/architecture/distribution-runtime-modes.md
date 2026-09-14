@@ -6,3 +6,4 @@ A Compose profile is an operator preset, not canonical authority. BOOTSTRAP does
 
 Portable binaries and containers use the same data layout concepts: P2P identity/cache, canonical application snapshot, objects, derived indexes, and optional CometBFT data are durable; configs are operator-controlled. Replacing a process or container while retaining the data directory must retain PeerID and application state.
 
+For a public Docker bootstrap, the bind listener and advertised location are distinct. The container listens on its bridge interface while an explicit generic DNS/IP QUIC multiaddr replaces private container addresses in Hello/PEX and status output. This operational location changes neither PeerID nor GenesisID.

@@ -1,19 +1,19 @@
-# NORMAL template. Replace angle-bracket values with local paths and the
-# GenesisID from the validator genesis before starting the node.
+# D2A shared-alpha NORMAL + BOOTSTRAP config. BOOTSTRAP grants no authority.
+# The public advertised address is supplied by the generic Compose override.
 network_id: zion-alpha-1
 genesis_id: 72ef0c7816d64255fc7b1da266c6a5b5ca345dd89cba2423fc8cfc8b4d1a61c6
-data_directory: <normal-data-directory>
+data_directory: /var/lib/zion
 log_level: INFO
-roles: [NORMAL]
+roles: [NORMAL, BOOTSTRAP]
 p2p:
   enabled: true
   listen_addresses: [/ip4/0.0.0.0/udp/42000/quic-v1]
   advertise_addresses: []
-  bootstrap_addresses: [] # Add /dns4/.../udp/42000/quic-v1/p2p/<PeerID>.
+  bootstrap_addresses: []
   fallback_addresses: []
   manual_peers: []
-  peer_key_path: <normal-data-directory>/p2p/peer.key
-  peer_cache_path: <normal-data-directory>/p2p/peers.json
+  peer_key_path: /var/lib/zion/p2p/peer.key
+  peer_cache_path: /var/lib/zion/p2p/peers.json
   max_connected_peers: 64
   target_outbound_peers: 12
   max_concurrent_dials: 8
@@ -21,16 +21,17 @@ p2p:
   max_addresses_per_peer: 8
   max_pex_peers_per_response: 32
 api:
-  listen: 127.0.0.1:42001
+  # Container-local protected listener; Compose publishes no API or metrics port.
+  listen: 0.0.0.0:42001
   metrics_enabled: true
-  allowed_origins: [http://127.0.0.1:3000]
-  bearer_token_file: ""
+  allowed_origins: []
+  bearer_token_file: /var/lib/zion/runtime/api-token
 objects:
-  directory: <normal-data-directory>/objects
+  directory: /var/lib/zion/objects
   quota_bytes: 1073741824
 board:
   enabled: true
-  index_path: <normal-data-directory>/board/index.json
+  index_path: /var/lib/zion/board/index.json
   announce_fanout: 8
   sync_interval: 30s
   sync_page_size: 16
@@ -38,7 +39,7 @@ board:
   max_concurrent_handlers: 8
   peer_timeout: 3s
 registries:
-  index_path: <normal-data-directory>/registries/index.json
+  index_path: /var/lib/zion/registries/index.json
 consensus:
   enabled: false
   root_directory: ""

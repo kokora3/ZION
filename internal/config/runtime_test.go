@@ -88,6 +88,7 @@ func TestRuntimeConfigNormalAndValidatorComposition(t *testing.T) {
 	fingerprint := protocol.HashBytes([]byte("phase-8-config-normal"))
 	normal := File{NetworkID: string(protocol.Alpha1NetworkID), GenesisID: hex.EncodeToString(fingerprint.Digest),
 		DataDirectory: t.TempDir(), Roles: []p2p.Role{p2p.RoleNormal}, LogLevel: "WARN",
+		P2P:     P2P{AdvertiseAddresses: []string{"/dns4/bootstrap.public.test/udp/42000/quic-v1"}},
 		API:     API{MetricsEnabled: boolPointer(false)},
 		Objects: Objects{Directory: filepath.Join(t.TempDir(), "object-store"), QuotaBytes: 8 << 20},
 		Board: Board{IndexPath: filepath.Join(t.TempDir(), "board-index.json"), AnnounceFanout: 4, SyncInterval: "2s",
@@ -101,6 +102,9 @@ func TestRuntimeConfigNormalAndValidatorComposition(t *testing.T) {
 	}
 	if normalConfig.API.MetricsEnabled {
 		t.Fatal("metrics_enabled configuration was not applied")
+	}
+	if len(normalConfig.P2P.AdvertiseAddresses) != 1 || normalConfig.P2P.AdvertiseAddresses[0] != normal.P2P.AdvertiseAddresses[0] {
+		t.Fatal("advertise_addresses configuration was not applied")
 	}
 	if normalConfig.BoardIndexPath != normal.Board.IndexPath || normalConfig.Board.AnnounceFanout != 4 ||
 		normalConfig.Board.SyncInterval != 2*time.Second || normalConfig.Board.SyncPageSize != 8 ||

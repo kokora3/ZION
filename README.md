@@ -30,7 +30,7 @@ Docker users can start the optional local Web client with:
 docker compose --profile normal --profile web up -d
 ```
 
-The node API and Web publish only to host loopback by default. See [the Docker guide](docs/guides/docker.md), [Windows installation](docs/guides/install-windows.md), and [Linux installation](docs/guides/install-linux.md).
+The node API and Web publish only to host loopback by default. The D2A public-host overlay publishes only ZION QUIC/UDP and runs no Web or validator. See [the Docker guide](docs/guides/docker.md), [provider-neutral public node deployment](docs/deployment/public-internet-node.md), [Windows installation](docs/guides/install-windows.md), and [Linux installation](docs/guides/install-linux.md).
 
 ## Development
 

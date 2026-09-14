@@ -37,6 +37,7 @@ type File struct {
 type P2P struct {
 	Enabled                *bool    `yaml:"enabled"`
 	ListenAddresses        []string `yaml:"listen_addresses"`
+	AdvertiseAddresses     []string `yaml:"advertise_addresses"`
 	BootstrapAddresses     []string `yaml:"bootstrap_addresses"`
 	FallbackAddresses      []string `yaml:"fallback_addresses"`
 	ManualPeers            []string `yaml:"manual_peers"`
@@ -130,6 +131,9 @@ func (f File) RuntimeConfig() (node.Config, error) {
 	cfg.P2P.Roles = append([]p2p.Role(nil), f.Roles...)
 	if f.P2P.ListenAddresses != nil {
 		cfg.P2P.ListenAddresses = append([]string(nil), f.P2P.ListenAddresses...)
+	}
+	if f.P2P.AdvertiseAddresses != nil {
+		cfg.P2P.AdvertiseAddresses = append([]string(nil), f.P2P.AdvertiseAddresses...)
 	}
 	cfg.P2P.BootstrapAddresses = append([]string(nil), f.P2P.BootstrapAddresses...)
 	cfg.P2P.FallbackAddresses = append([]string(nil), f.P2P.FallbackAddresses...)

@@ -76,6 +76,16 @@ func NewNode(parent context.Context, cfg Config) (*Node, error) {
 	} else {
 		options = append(options, libp2p.ListenAddrStrings(cfg.ListenAddresses...))
 	}
+	if len(cfg.AdvertiseAddresses) > 0 {
+		advertised := make([]ma.Multiaddr, 0, len(cfg.AdvertiseAddresses))
+		for _, value := range cfg.AdvertiseAddresses {
+			address, _ := ma.NewMultiaddr(value)
+			advertised = append(advertised, address)
+		}
+		options = append(options, libp2p.AddrsFactory(func([]ma.Multiaddr) []ma.Multiaddr {
+			return append([]ma.Multiaddr(nil), advertised...)
+		}))
+	}
 	host, err := libp2p.New(options...)
 	if err != nil {
 		return nil, fmt.Errorf("create libp2p host: %w", err)
@@ -100,12 +110,16 @@ func (n *Node) Host() libhost.Host    { return n.host }
 func (n *Node) PeerID() libpeer.ID    { return n.host.ID() }
 func (n *Node) CacheLoadError() error { return n.cacheLoadErr }
 func (n *Node) ListenAddresses() []ma.Multiaddr {
+	return append([]ma.Multiaddr(nil), n.host.Network().ListenAddresses()...)
+}
+
+func (n *Node) AdvertisedAddresses() []ma.Multiaddr {
 	return append([]ma.Multiaddr(nil), n.host.Addrs()...)
 }
 
 func (n *Node) FullAddresses() []ma.Multiaddr {
 	component, _ := ma.NewMultiaddr("/p2p/" + n.PeerID().String())
-	addresses := n.ListenAddresses()
+	addresses := n.AdvertisedAddresses()
 	result := make([]ma.Multiaddr, 0, len(addresses))
 	for _, address := range addresses {
 		result = append(result, address.Encapsulate(component))
@@ -161,7 +175,7 @@ func (n *Node) localHello() Hello {
 		SupportedVersions:   append([]Version(nil), n.cfg.SupportedVersions...),
 		Roles:               append([]Role(nil), n.cfg.Roles...),
 		AuthenticatedPeerID: n.PeerID().String(),
-		AdvertisedAddresses: sortedAddressStrings(n.host.Addrs(), MaxAdvertisedAddresses),
+		AdvertisedAddresses: sortedAddressStrings(n.AdvertisedAddresses(), MaxAdvertisedAddresses),
 	}
 }
 

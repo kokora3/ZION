@@ -27,9 +27,13 @@ func main() {
 		stateCommand(os.Args[2:])
 		return
 	}
+	if len(os.Args) >= 2 && os.Args[1] == "config" {
+		configCommand(os.Args[2:])
+		return
+	}
 
 	if len(os.Args) < 2 || os.Args[1] != "run" {
-		fmt.Fprintln(os.Stderr, "usage: zion-node run --config <zion.yaml> | zion-node state export|inspect|import | zion-node version")
+		fmt.Fprintln(os.Stderr, "usage: zion-node run --config <zion.yaml> | zion-node config validate | zion-node state export|inspect|import | zion-node version")
 		os.Exit(2)
 	}
 	flags := flag.NewFlagSet("run", flag.ExitOnError)
@@ -37,6 +41,7 @@ func main() {
 	dataDir := flags.String("data-dir", "", "override local data directory")
 	apiListen := flags.String("api-listen", "", "override local API address")
 	p2pListen := flags.String("p2p-listen", "", "override general P2P multiaddr")
+	p2pAdvertise := flags.String("p2p-advertise", "", "override the public P2P multiaddr advertised to peers")
 	manualPeer := flags.String("manual-peer", "", "append one manual peer multiaddr")
 	_ = flags.Parse(os.Args[2:])
 
@@ -62,6 +67,9 @@ func main() {
 	if *p2pListen != "" {
 		cfg.P2P.ListenAddresses = []string{*p2pListen}
 	}
+	if *p2pAdvertise != "" {
+		cfg.P2P.AdvertiseAddresses = []string{*p2pAdvertise}
+	}
 	if *manualPeer != "" {
 		cfg.P2P.ManualPeers = append(cfg.P2P.ManualPeers, *manualPeer)
 	}
@@ -85,6 +93,48 @@ func main() {
 	if err := runtime.Stop(shutdown); err != nil {
 		fail(err)
 	}
+}
+
+func configCommand(args []string) {
+	if len(args) < 1 || args[0] != "validate" {
+		fail(fmt.Errorf("usage: zion-node config validate --config <zion.yaml> [--p2p-advertise <multiaddr>] [--expected-network <id>] [--expected-genesis-id <hex>]"))
+	}
+	flags := flag.NewFlagSet("config validate", flag.ExitOnError)
+	configPath := flags.String("config", "zion.yaml", "node configuration file")
+	p2pAdvertise := flags.String("p2p-advertise", "", "override the public P2P multiaddr advertised to peers")
+	expectedNetwork := flags.String("expected-network", "", "require this NetworkID")
+	expectedGenesisID := flags.String("expected-genesis-id", "", "require this lowercase GenesisID")
+	_ = flags.Parse(args[1:])
+	if flags.NArg() != 0 {
+		fail(fmt.Errorf("unexpected config validate arguments"))
+	}
+	file, err := localconfig.Load(*configPath)
+	if err != nil {
+		fail(err)
+	}
+	cfg, err := file.RuntimeConfig()
+	if err != nil {
+		fail(err)
+	}
+	if *p2pAdvertise != "" {
+		cfg.P2P.AdvertiseAddresses = []string{*p2pAdvertise}
+	}
+	if err := node.ValidateConfig(cfg); err != nil {
+		fail(err)
+	}
+	if err := cfg.P2P.Validate(); err != nil {
+		fail(fmt.Errorf("invalid P2P configuration: %w", err))
+	}
+	if *expectedNetwork != "" && string(cfg.NetworkID) != *expectedNetwork {
+		fail(fmt.Errorf("configured NetworkID %q differs from expected %q", cfg.NetworkID, *expectedNetwork))
+	}
+	genesisID := fmt.Sprintf("%x", cfg.GenesisID.Digest)
+	if *expectedGenesisID != "" && genesisID != *expectedGenesisID {
+		fail(fmt.Errorf("configured GenesisID %q differs from expected %q", genesisID, *expectedGenesisID))
+	}
+	writeJSON(map[string]any{"valid": true, "network_id": cfg.NetworkID,
+		"genesis_id": genesisID, "roles": cfg.P2P.Roles,
+		"p2p_advertise_addresses": cfg.P2P.AdvertiseAddresses})
 }
 
 func stateCommand(args []string) {

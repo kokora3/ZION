@@ -70,6 +70,39 @@ func testRuntimeConfig(t testing.TB, name string, authoritative, listen bool) Co
 	return cfg
 }
 
+func TestBootstrapStatusReportsBindAdvertiseAndCopyableMultiaddr(t *testing.T) {
+	cfg := testRuntimeConfig(t, "public-status", true, true)
+	cfg.P2P.Roles = []p2p.Role{p2p.RoleNormal, p2p.RoleBootstrap}
+	cfg.P2P.AdvertiseAddresses = []string{"/dns4/bootstrap.public.test/udp/42000/quic-v1"}
+	runtime, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Stop(context.Background())
+
+	status := runtime.Status().(map[string]any)
+	peerID := status["peer_id"].(string)
+	advertised := status["p2p_advertised_addresses"].([]string)
+	bound := status["p2p_listen_addresses"].([]string)
+	bootstrap := status["bootstrap_multiaddrs"].([]string)
+	if len(advertised) != 1 || advertised[0] != cfg.P2P.AdvertiseAddresses[0] {
+		t.Fatalf("advertised status = %v", advertised)
+	}
+	if len(bound) == 0 || !strings.Contains(bound[0], "/ip4/127.0.0.1/udp/") {
+		t.Fatalf("listen status = %v", bound)
+	}
+	want := cfg.P2P.AdvertiseAddresses[0] + "/p2p/" + peerID
+	if len(bootstrap) != 1 || bootstrap[0] != want {
+		t.Fatalf("bootstrap status = %v, want %s", bootstrap, want)
+	}
+	if status["peer_count"].(int) != 0 || status["validator_authorized"].(bool) {
+		t.Fatal("fresh bootstrap status gained peers or validator authority")
+	}
+}
+
 type testConsensus struct {
 	mu     sync.RWMutex
 	active bool

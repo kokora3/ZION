@@ -2,9 +2,11 @@ package p2p
 
 import (
 	"fmt"
+	"net"
 	"path/filepath"
 
 	"github.com/kokora3/zion/internal/protocol"
+	ma "github.com/multiformats/go-multiaddr"
 )
 
 type Config struct {
@@ -14,6 +16,7 @@ type Config struct {
 	KeyPath            string
 	PeerCachePath      string
 	ListenAddresses    []string
+	AdvertiseAddresses []string
 	BootstrapAddresses []string
 	FallbackAddresses  []string
 	ManualPeers        []string
@@ -61,10 +64,14 @@ func (c *Config) normalize() error {
 		return err
 	}
 	c.ListenAddresses = append([]string(nil), c.ListenAddresses...)
+	c.AdvertiseAddresses = append([]string(nil), c.AdvertiseAddresses...)
 	c.BootstrapAddresses = append([]string(nil), c.BootstrapAddresses...)
 	c.FallbackAddresses = append([]string(nil), c.FallbackAddresses...)
 	c.ManualPeers = append([]string(nil), c.ManualPeers...)
 	if err := validateAddressStrings(c.ListenAddresses, HardMaxCachedPeers); err != nil {
+		return err
+	}
+	if err := validateAdvertiseAddresses(c.AdvertiseAddresses); err != nil {
 		return err
 	}
 	for _, group := range [][]string{c.BootstrapAddresses, c.FallbackAddresses, c.ManualPeers} {
@@ -79,6 +86,55 @@ func (c *Config) normalize() error {
 		if err := validateAddressStrings(group, HardMaxCachedPeers); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// Validate checks P2P configuration without opening sockets or creating keys.
+func (c Config) Validate() error { return c.normalize() }
+
+func validateAdvertiseAddresses(addresses []string) error {
+	if err := validateAddressStrings(addresses, MaxAdvertisedAddresses); err != nil {
+		return err
+	}
+	for _, value := range addresses {
+		address, _ := ma.NewMultiaddr(value)
+		if _, err := address.ValueForProtocol(ma.P_P2P); err == nil {
+			return fmt.Errorf("configured advertised address must not include /p2p/PeerID")
+		}
+		if _, err := address.ValueForProtocol(ma.P_UDP); err != nil {
+			return fmt.Errorf("configured advertised address must use UDP")
+		}
+		if _, err := address.ValueForProtocol(ma.P_QUIC_V1); err != nil {
+			return fmt.Errorf("configured advertised address must use quic-v1")
+		}
+		if value, err := address.ValueForProtocol(ma.P_IP4); err == nil {
+			if err := validatePublicIP(value); err != nil {
+				return err
+			}
+			continue
+		}
+		if value, err := address.ValueForProtocol(ma.P_IP6); err == nil {
+			if err := validatePublicIP(value); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := address.ValueForProtocol(ma.P_DNS4); err == nil {
+			continue
+		}
+		if _, err := address.ValueForProtocol(ma.P_DNS6); err == nil {
+			continue
+		}
+		return fmt.Errorf("configured advertised address must use ip4, ip6, dns4, or dns6")
+	}
+	return nil
+}
+
+func validatePublicIP(value string) error {
+	ip := net.ParseIP(value)
+	if ip == nil || !ip.IsGlobalUnicast() || ip.IsUnspecified() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return fmt.Errorf("configured advertised IP must be publicly routable")
 	}
 	return nil
 }

@@ -1,0 +1,21 @@
+# CI/local Linux simulation only; it still uses the canonical D1 node image.
+services:
+  zion-node-bootstrap:
+    container_name: zion-d2a-ci-bootstrap
+  zion-node-normal:
+    image: ${ZION_IMAGE:?set ZION_IMAGE}
+    container_name: zion-d2a-ci-normal
+    volumes: !override
+      - type: bind
+        source: ${ZION_TEST_NORMAL_DATA_DIR:?set ZION_TEST_NORMAL_DATA_DIR}
+        target: /var/lib/zion
+      - type: bind
+        source: ${ZION_TEST_NORMAL_CONFIG:?set ZION_TEST_NORMAL_CONFIG}
+        target: /etc/zion/zion.yaml
+        read_only: true
+    ports: !override []
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

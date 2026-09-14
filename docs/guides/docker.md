@@ -43,7 +43,7 @@ Container replacement with the same named volume preserves the P2P identity, pee
 
 For an upgrade: stop; export canonical state and back up the named volume; pull or load the deliberately selected version tag; recreate with the same volume/config; then verify version, NetworkID, PeerID, StateHash, objects, and indexes. No D1 wrapper performs an implicit migration or reset.
 
-For an Ubuntu VPS/DigitalOcean Droplet, install Docker Engine plus Compose, retain the named volume (or an owned bind mount), expose only peer ports in the firewall, and attach DNS/Reserved IP as appropriate. D1 does not deploy any provider resources.
+For an ordinary public Linux host, use the provider-neutral [D2A public Internet node guide](../deployment/public-internet-node.md). Its small override reuses this Compose model and D1 image, replaces the bootstrap named volume with an owned host bind mount, publishes only QUIC/UDP, and supplies an explicit public advertised address. D1/D2A do not deploy provider resources.
 
 ## Build metadata and scanning
 
