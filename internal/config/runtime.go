@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +31,7 @@ type File struct {
 	Board         Board      `yaml:"board"`
 	Registries    Registries `yaml:"registries"`
 	Consensus     Consensus  `yaml:"consensus"`
+	LogLevel      string     `yaml:"log_level"`
 }
 
 type P2P struct {
@@ -52,6 +54,7 @@ type API struct {
 	Listen          string   `yaml:"listen"`
 	AllowedOrigins  []string `yaml:"allowed_origins"`
 	BearerTokenFile string   `yaml:"bearer_token_file"`
+	MetricsEnabled  *bool    `yaml:"metrics_enabled"`
 }
 
 // Objects is local operational configuration and never canonical chain state.
@@ -117,6 +120,9 @@ func (f File) RuntimeConfig() (node.Config, error) {
 	}
 	initial := chain.Genesis(protocol.NetworkID(f.NetworkID))
 	cfg := node.DefaultConfig(f.DataDirectory, fingerprint, initial)
+	if _, err := ParseLogLevel(f.LogLevel); err != nil {
+		return node.Config{}, err
+	}
 	cfg.NetworkID = protocol.NetworkID(f.NetworkID)
 	if len(f.Roles) == 0 {
 		f.Roles = []p2p.Role{p2p.RoleNormal}
@@ -157,6 +163,9 @@ func (f File) RuntimeConfig() (node.Config, error) {
 	}
 	if f.API.Listen != "" {
 		cfg.API.Listen = f.API.Listen
+	}
+	if f.API.MetricsEnabled != nil {
+		cfg.API.MetricsEnabled = *f.API.MetricsEnabled
 	}
 	if f.Objects.Directory != "" {
 		cfg.ObjectDirectory = f.Objects.Directory
@@ -265,6 +274,22 @@ func (f File) RuntimeConfig() (node.Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// ParseLogLevel validates the bounded set supported by the JSON logger.
+func ParseLogLevel(value string) (slog.Level, error) {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "", "INFO":
+		return slog.LevelInfo, nil
+	case "DEBUG":
+		return slog.LevelDebug, nil
+	case "WARN":
+		return slog.LevelWarn, nil
+	case "ERROR":
+		return slog.LevelError, nil
+	default:
+		return slog.LevelInfo, fmt.Errorf("log_level must be DEBUG, INFO, WARN, or ERROR")
+	}
 }
 
 func parseDigest(value string) (protocol.HashDigest, error) {

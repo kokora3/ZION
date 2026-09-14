@@ -59,10 +59,12 @@ func (s *Service) Start(ctx context.Context) error {
 		return err
 	}
 	if err := created.Start(); err != nil {
-		if created.IsRunning() {
-			_ = created.Stop()
-			created.Wait()
-		}
+		// CometBFT's BaseService clears its started flag when OnStart fails,
+		// which makes Stop return ErrNotStarted even though NewNode has already
+		// opened its stores and OnStart may have started partial resources.
+		// Invoke the node cleanup hook directly so bind/start failures release
+		// transports and database handles instead of leaking them until exit.
+		created.OnStop()
 		return err
 	}
 	s.node = created

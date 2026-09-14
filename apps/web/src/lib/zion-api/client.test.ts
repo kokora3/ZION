@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZionAPI, normalizeBaseURL } from "./client";
 
-const status = { network_id:"zion-alpha-1", genesis_id:"00", runtime_state:"RUNNING", roles:["NORMAL"], peer_id:"peer", sync_status:"SYNCED", accepted_height:7, state_hash:"zion:state:sha256:x", consensus_active:false, validator_authorized:false, protocol_version:"0.1", object_store_enabled:true, object_count:0, object_bytes:0, object_quota_bytes:100, board_enabled:true, indexed_posts:0, indexed_replies:0, hidden_local:0, board_sync_state:"ACTIVE" };
+const status = { network_id:"zion-alpha-1", genesis_id:"00", runtime_state:"RUNNING", roles:["NORMAL"], peer_id:"peer", sync_status:"SYNCED", accepted_height:7, state_hash:"zion:state:sha256:x", consensus_active:false, validator_authorized:false, protocol_version:"0.1", software_version:"v0.1.0-alpha.1", object_store_enabled:true, object_count:0, object_bytes:0, object_quota_bytes:100, board_enabled:true, indexed_posts:0, indexed_replies:0, hidden_local:0, board_sync_state:"ACTIVE" };
 
 afterEach(() => vi.unstubAllGlobals());
 describe("ZionAPI", () => {

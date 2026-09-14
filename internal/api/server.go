@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/kokora3/zion/internal/board"
@@ -85,11 +86,12 @@ type Config struct {
 	ReadTimeout    time.Duration
 	WriteTimeout   time.Duration
 	IdleTimeout    time.Duration
+	MetricsEnabled bool
 }
 
 func DefaultConfig() Config {
 	return Config{Listen: DefaultListen, MaxBodyBytes: DefaultMaxBody, MaxConcurrent: DefaultConcurrency,
-		ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+		ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MetricsEnabled: true}
 }
 
 type Server struct {
@@ -98,6 +100,8 @@ type Server struct {
 	server   *http.Server
 	listener net.Listener
 	sem      chan struct{}
+	requests atomic.Uint64
+	rejected atomic.Uint64
 }
 
 func NewServer(cfg Config, backend Backend) (*Server, error) {
@@ -152,6 +156,7 @@ func (s *Server) Close(ctx context.Context) error {
 }
 
 func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	s.requests.Add(1)
 	writer.Header().Set("Content-Type", "application/json")
 	if len(request.URL.RequestURI()) > 2048 {
 		s.writeError(writer, http.StatusRequestURITooLong, "REQUEST_TOO_LONG", "request URI exceeds limit")
@@ -189,6 +194,15 @@ func (s *Server) route(writer http.ResponseWriter, request *http.Request) {
 	path := request.URL.Path
 	if request.Method == http.MethodGet {
 		switch path {
+		case "/metrics":
+			provider, ok := s.backend.(metricsProvider)
+			if !s.cfg.MetricsEnabled || !ok {
+				s.writeError(writer, http.StatusNotFound, "NOT_FOUND", "endpoint not found")
+				return
+			}
+			writer.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+			writeMetrics(writer, provider.Metrics(), s.requests.Load(), s.rejected.Load())
+			return
 		case BasePath + "/health":
 			s.writeJSON(writer, http.StatusOK, s.backend.Health())
 			return
@@ -743,5 +757,8 @@ func (s *Server) writeJSON(writer http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(writer).Encode(value)
 }
 func (s *Server) writeError(writer http.ResponseWriter, status int, code, message string) {
+	if status >= 400 {
+		s.rejected.Add(1)
+	}
 	s.writeJSON(writer, status, Error{Code: code, Message: message})
 }

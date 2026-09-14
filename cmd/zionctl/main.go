@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kokora3/zion/internal/board"
+	"github.com/kokora3/zion/internal/buildinfo"
 	"github.com/kokora3/zion/internal/chain"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/protocol"
@@ -24,7 +25,7 @@ import (
 
 func main() {
 	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "version") {
-		fmt.Fprintln(os.Stdout, protocol.VersionString("zionctl"))
+		fmt.Fprintln(os.Stdout, buildinfo.String("zionctl"))
 		return
 	}
 
@@ -34,7 +35,7 @@ func main() {
 	_ = flags.Parse(os.Args[1:])
 	args := flags.Args()
 	if len(args) == 0 {
-		fail("usage: zionctl [--api URL] status|peers|state|tx ...|object ...|board ...|research ...|resource ...")
+		fail("usage: zionctl [--api URL] status|peers|state|tx ...|governance ...|object ...|board ...|research ...|resource ...")
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	var method, path string
@@ -66,6 +67,24 @@ func main() {
 			method, path = http.MethodGet, "/v1/transactions/"+url.PathEscape(args[2])
 		default:
 			fail("unknown tx command")
+		}
+	case "governance":
+		if len(args) < 2 {
+			fail("usage: zionctl governance list | governance get <proposal-id>")
+		}
+		switch args[1] {
+		case "list":
+			if len(args) != 2 {
+				fail("usage: zionctl governance list")
+			}
+			method, path = http.MethodGet, "/v1/governance/proposals"
+		case "get":
+			if len(args) != 3 || strings.TrimSpace(args[2]) == "" {
+				fail("usage: zionctl governance get <proposal-id>")
+			}
+			method, path = http.MethodGet, "/v1/governance/proposals/"+url.PathEscape(args[2])
+		default:
+			fail("unknown governance command")
 		}
 	case "object":
 		if len(args) < 3 {

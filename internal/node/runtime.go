@@ -5,12 +5,16 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"log/slog"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kokora3/zion/internal/api"
 	"github.com/kokora3/zion/internal/board"
+	"github.com/kokora3/zion/internal/buildinfo"
 	"github.com/kokora3/zion/internal/chain"
 	"github.com/kokora3/zion/internal/consensus"
 	"github.com/kokora3/zion/internal/governance"
@@ -79,6 +83,7 @@ type Config struct {
 	Board                     board.Config
 	BoardIndexPath            string
 	RegistryIndexPath         string
+	Logger                    *slog.Logger
 }
 
 func DefaultConfig(dataDir string, genesisID protocol.HashDigest, initial chain.State) Config {
@@ -126,6 +131,9 @@ type Runtime struct {
 	syncSem       chan struct{}
 	tx            map[string]TransactionRecord
 	txOrder       []string
+	startedAt     time.Time
+	fetchSuccess  atomic.Uint64
+	fetchFailure  atomic.Uint64
 }
 
 func New(cfg Config) (*Runtime, error) {
@@ -138,6 +146,9 @@ func New(cfg Config) (*Runtime, error) {
 	}
 	if cfg.P2P.NetworkID != cfg.NetworkID || !equalHash(cfg.P2P.NetworkFingerprint, cfg.GenesisID) {
 		return nil, fmt.Errorf("runtime and P2P network identity differ")
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	if cfg.Consensus != nil && cfg.ConsensusFactory != nil {
 		return nil, fmt.Errorf("configure either a consensus service or a consensus factory")
@@ -180,6 +191,7 @@ func (r *Runtime) Start(parent context.Context) (err error) {
 	r.mu.Unlock()
 	defer func() {
 		if err != nil {
+			r.cfg.Logger.Error("node start failed", "error", err)
 			_ = r.cleanup(context.Background())
 			r.mu.Lock()
 			r.lifecycle = Failed
@@ -238,6 +250,7 @@ func (r *Runtime) Start(parent context.Context) (err error) {
 	}
 	r.mu.Lock()
 	r.ctx, r.cancel = context.WithCancel(parent)
+	r.startedAt = time.Now()
 	runtimeContext := r.ctx
 	r.mu.Unlock()
 	p2pNode, err := p2p.NewNode(runtimeContext, r.cfg.P2P)
@@ -291,6 +304,8 @@ func (r *Runtime) Start(parent context.Context) (err error) {
 	r.api = apiServer
 	r.lifecycle = Running
 	r.mu.Unlock()
+	r.cfg.Logger.Info("node runtime started", "network", r.cfg.NetworkID, "peer_id", p2pNode.PeerID().String(),
+		"roles", r.cfg.P2P.Roles, "api_listen", apiServer.Addr(), "software_version", buildinfo.Version)
 	r.wg.Add(1)
 	go func() { defer r.wg.Done(); r.discoverAndSync() }()
 	return nil
@@ -310,6 +325,7 @@ func (r *Runtime) acceptConsensusCommit(state chain.State, height int64, txs [][
 		return err
 	}
 	r.state, r.height, r.sync, r.persisted = cloneState(state), height, Synced, true
+	r.cfg.Logger.Info("canonical state committed", "height", height, "state_hash", hash.String(), "transactions", len(txs))
 	_ = r.registryIndex.Rebuild(state)
 	for _, raw := range txs {
 		tx, err := consensus.DecodeTransaction(raw, r.cfg.NetworkID)
@@ -343,6 +359,7 @@ func (r *Runtime) Stop(ctx context.Context) error {
 	r.mu.Lock()
 	r.lifecycle = Stopped
 	r.mu.Unlock()
+	r.cfg.Logger.Info("node runtime stopped", "error", err)
 	return err
 }
 
@@ -436,7 +453,14 @@ func (r *Runtime) FetchObject(ctx context.Context, id protocol.ObjectID) (object
 	if fetcher == nil {
 		return objects.Object{}, fmt.Errorf("object service is not running")
 	}
-	return fetcher.FetchObject(ctx, id)
+	object, err := fetcher.FetchObject(ctx, id)
+	if err != nil {
+		r.fetchFailure.Add(1)
+		r.cfg.Logger.Warn("object fetch failed", "error", err)
+		return objects.Object{}, err
+	}
+	r.fetchSuccess.Add(1)
+	return object, nil
 }
 
 func (r *Runtime) Commit(raw []byte, height int64) (chain.Receipt, error) {
@@ -541,10 +565,50 @@ func (r *Runtime) Status() any {
 		"runtime_state": r.lifecycle, "roles": append([]p2p.Role(nil), r.cfg.P2P.Roles...), "peer_id": peerID,
 		"sync_status": r.sync, "accepted_height": r.height, "state_hash": hash.String(),
 		"consensus_active": consensusActive, "validator_authorized": r.validatorAuthorized(r.state),
-		"protocol_version": protocol.CurrentProtocolVersion, "object_store_enabled": true,
+		"protocol_version": protocol.CurrentProtocolVersion, "software_version": buildinfo.Version,
+		"build_commit": buildinfo.Commit, "build_date": buildinfo.BuildDate, "object_store_enabled": true,
 		"object_count": objectCount, "object_bytes": objectBytes, "object_quota_bytes": objectQuota,
 		"board_enabled": r.cfg.Board.Enabled, "indexed_posts": posts, "indexed_replies": replies,
-		"hidden_local": hidden, "board_sync_state": boardSync}
+		"hidden_local": hidden, "board_sync_state": boardSync,
+		"limits": map[string]any{"max_connected_peers": r.cfg.P2P.Limits.MaxConnectedPeers,
+			"max_concurrent_dials": r.cfg.P2P.Limits.MaxConcurrentDials, "recent_transactions": r.cfg.RecentTransactions,
+			"max_sync_snapshot_bytes": MaxSnapshotBytes, "object_max_bytes": objects.MaxObjectBytes,
+			"object_quota_bytes": r.cfg.ObjectQuotaBytes}}
+}
+
+// Metrics returns a bounded-cardinality, non-canonical operational view.
+func (r *Runtime) Metrics() api.MetricsSnapshot {
+	r.mu.RLock()
+	state := cloneState(r.state)
+	height, lifecycle, syncStatus, startedAt := r.height, r.lifecycle, r.sync, r.startedAt
+	consensusActive := r.consensus != nil && r.consensus.Active()
+	validatorAuthorized := r.validatorAuthorized(r.state)
+	p2pNode := r.p2p
+	recent := len(r.tx)
+	r.mu.RUnlock()
+	connected, outbound := 0, 0
+	if p2pNode != nil {
+		connected, outbound = p2pNode.ConnectionCounts()
+	}
+	proposals := 0
+	if state.Governance != nil {
+		proposals = len(state.Governance.Proposals)
+	}
+	posts, replies, _ := r.boardIndex.Counts()
+	objectCount, objectBytes, quota := r.objects.Usage()
+	uptime := 0.0
+	if !startedAt.IsZero() {
+		uptime = time.Since(startedAt).Seconds()
+	}
+	return api.MetricsSnapshot{Network: string(r.cfg.NetworkID), ProtocolVersion: string(protocol.CurrentProtocolVersion),
+		SoftwareVersion: buildinfo.Version, Ready: lifecycle == Running && syncStatus == Synced, SyncStatus: string(syncStatus),
+		UptimeSeconds: uptime, ConnectedPeers: connected, OutboundPeers: outbound,
+		MaxConnectedPeers: r.cfg.P2P.Limits.MaxConnectedPeers, ConsensusHeight: height, ConsensusActive: consensusActive,
+		ValidatorAuthorized: validatorAuthorized, StateHeight: height, Identities: len(state.Identities), GovernanceProposals: proposals,
+		ResearchEntries: len(state.Research), ResourceEntries: len(state.Resources), BoardPosts: posts, BoardReplies: replies,
+		ObjectCount: objectCount, ObjectBytes: objectBytes, ObjectQuotaBytes: quota, RecentTransactions: recent,
+		RecentTransactionLimit: r.cfg.RecentTransactions, SyncSnapshotLimitBytes: MaxSnapshotBytes,
+		ObjectFetchSuccessTotal: r.fetchSuccess.Load(), ObjectFetchFailureTotal: r.fetchFailure.Load()}
 }
 
 func (r *Runtime) Peers() any {

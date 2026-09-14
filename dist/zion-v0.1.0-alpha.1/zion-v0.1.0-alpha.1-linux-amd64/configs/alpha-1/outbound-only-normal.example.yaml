@@ -1,0 +1,47 @@
+# Outbound-only NORMAL template: no inbound libp2p listener is opened.
+network_id: zion-alpha-1
+genesis_id: <verified-64-character-lowercase-genesis-sha256>
+data_directory: <outbound-normal-data-directory>
+log_level: INFO
+roles: [NORMAL]
+p2p:
+  enabled: true
+  listen_addresses: []
+  bootstrap_addresses: [] # Supply at least one authenticated /p2p/<PeerID> seed.
+  fallback_addresses: []
+  manual_peers: []
+  peer_key_path: <outbound-normal-data-directory>/p2p/peer.key
+  peer_cache_path: <outbound-normal-data-directory>/p2p/peers.json
+  max_connected_peers: 64
+  target_outbound_peers: 12
+  max_concurrent_dials: 8
+  max_cached_peers: 256
+  max_addresses_per_peer: 8
+  max_pex_peers_per_response: 32
+api:
+  listen: 127.0.0.1:42001
+  metrics_enabled: true
+  allowed_origins: [http://127.0.0.1:3000]
+  bearer_token_file: ""
+objects:
+  directory: <outbound-normal-data-directory>/objects
+  quota_bytes: 1073741824
+board:
+  enabled: true
+  index_path: <outbound-normal-data-directory>/board/index.json
+  announce_fanout: 8
+  sync_interval: 30s
+  sync_page_size: 16
+  max_sync_events_per_cycle: 256
+  max_concurrent_handlers: 8
+  peer_timeout: 3s
+registries:
+  index_path: <outbound-normal-data-directory>/registries/index.json
+consensus:
+  enabled: false
+  root_directory: ""
+  moniker: ""
+  p2p_listen_address: ""
+  persistent_peers: ""
+  rpc_listen_address: ""
+  create_empty_blocks: false

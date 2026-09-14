@@ -17,10 +17,32 @@ import (
 	"github.com/kokora3/zion/internal/protocol"
 )
 
+func TestAllAlphaExampleConfigsParseStrictly(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "..", "configs", "alpha-1", "*.yaml"))
+	if err != nil || len(paths) < 5 {
+		t.Fatalf("expected alpha configuration profiles: %v (%d)", err, len(paths))
+	}
+	for _, path := range paths {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			file, err := Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if file.NetworkID != string(protocol.Alpha1NetworkID) || file.GenesisID == "" || file.DataDirectory == "" {
+				t.Fatal("example omits required network, genesis, or data-directory field")
+			}
+			if _, err := ParseLogLevel(file.LogLevel); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestRuntimeConfigNormalAndValidatorComposition(t *testing.T) {
 	fingerprint := protocol.HashBytes([]byte("phase-8-config-normal"))
 	normal := File{NetworkID: string(protocol.Alpha1NetworkID), GenesisID: hex.EncodeToString(fingerprint.Digest),
-		DataDirectory: t.TempDir(), Roles: []p2p.Role{p2p.RoleNormal},
+		DataDirectory: t.TempDir(), Roles: []p2p.Role{p2p.RoleNormal}, LogLevel: "WARN",
+		API:     API{MetricsEnabled: boolPointer(false)},
 		Objects: Objects{Directory: filepath.Join(t.TempDir(), "object-store"), QuotaBytes: 8 << 20},
 		Board: Board{IndexPath: filepath.Join(t.TempDir(), "board-index.json"), AnnounceFanout: 4, SyncInterval: "2s",
 			SyncPageSize: 8, MaxSyncEventsPerCycle: 64, MaxConcurrentHandlers: 3, PeerTimeout: "1s"}}
@@ -30,6 +52,9 @@ func TestRuntimeConfigNormalAndValidatorComposition(t *testing.T) {
 	}
 	if normalConfig.ObjectDirectory != normal.Objects.Directory || normalConfig.ObjectQuotaBytes != normal.Objects.QuotaBytes {
 		t.Fatal("local object-store configuration was not applied")
+	}
+	if normalConfig.API.MetricsEnabled {
+		t.Fatal("metrics_enabled configuration was not applied")
 	}
 	if normalConfig.BoardIndexPath != normal.Board.IndexPath || normalConfig.Board.AnnounceFanout != 4 ||
 		normalConfig.Board.SyncInterval != 2*time.Second || normalConfig.Board.SyncPageSize != 8 ||
@@ -87,6 +112,8 @@ func TestRuntimeConfigNormalAndValidatorComposition(t *testing.T) {
 		t.Fatal("consensus enabled without VALIDATOR role")
 	}
 }
+
+func boolPointer(value bool) *bool { return &value }
 
 func TestLoadRejectsUnknownConfigurationField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "zion.yaml")

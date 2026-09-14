@@ -15,9 +15,12 @@ import (
 	"testing"
 
 	"github.com/kokora3/zion/internal/board"
+	"github.com/kokora3/zion/internal/chain"
 	"github.com/kokora3/zion/internal/identity"
 	"github.com/kokora3/zion/internal/objects"
 	"github.com/kokora3/zion/internal/protocol"
+	"github.com/kokora3/zion/internal/research"
+	"github.com/kokora3/zion/internal/resources"
 )
 
 func cliTestObject(payload string) objects.Object {
@@ -211,6 +214,49 @@ func TestBoardCommandsUseVersionedAPIEndToEnd(t *testing.T) {
 		if seen[want] != 1 {
 			t.Fatalf("request %q count = %d", want, seen[want])
 		}
+	}
+}
+
+func TestCoreReadTransactionGovernanceAndRegistryCLIIndependence(t *testing.T) {
+	txID := chain.TxID{HashDigest: protocol.HashBytes([]byte("cli-transaction"))}.String()
+	researchID := research.ID{HashDigest: protocol.HashBytes([]byte("cli-research"))}.String()
+	resourceID := resources.ID{HashDigest: protocol.HashBytes([]byte("cli-resource"))}.String()
+	proposalID := "zion:proposal:sha256:" + strings.Repeat("ab", 32)
+	seen := make(map[string]int)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		seen[request.Method+" "+request.URL.Path]++
+		writer.Header().Set("Content-Type", "application/json")
+		if request.Method == http.MethodPost && request.URL.Path == "/v1/transactions" {
+			var wrapper map[string]string
+			_ = json.NewDecoder(request.Body).Decode(&wrapper)
+			if wrapper["encoding"] != "base64" {
+				http.Error(writer, `{"code":"INVALID_TRANSACTION"}`, http.StatusBadRequest)
+				return
+			}
+			writer.WriteHeader(http.StatusAccepted)
+		}
+		_, _ = io.WriteString(writer, `{"status":"OK"}`)
+	}))
+	defer server.Close()
+	txPath := filepath.Join(t.TempDir(), "tx.cbor")
+	if err := os.WriteFile(txPath, []byte{0xa0}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	commands := [][]string{
+		{"--api", server.URL, "status"}, {"--api", server.URL, "peers"}, {"--api", server.URL, "state"},
+		{"--api", server.URL, "tx", "submit", txPath}, {"--api", server.URL, "tx", "status", txID},
+		{"--api", server.URL, "governance", "list"}, {"--api", server.URL, "governance", "get", proposalID},
+		{"--api", server.URL, "research", "list"}, {"--api", server.URL, "research", "get", researchID},
+		{"--api", server.URL, "research", "search", "alpha"}, {"--api", server.URL, "resource", "list"},
+		{"--api", server.URL, "resource", "get", resourceID}, {"--api", server.URL, "resource", "search", "tool"},
+	}
+	for _, command := range commands {
+		if output := runSuccessfulCLI(t, command); !strings.Contains(output, "OK") {
+			t.Fatalf("%v output = %s", command, output)
+		}
+	}
+	if len(seen) != len(commands) {
+		t.Fatalf("CLI paths were not independent API requests: %v", seen)
 	}
 }
 

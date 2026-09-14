@@ -133,6 +133,26 @@ func (n *Node) IsUsable(peerID libpeer.ID) bool {
 	return ok
 }
 
+// ConnectionCounts returns bounded operational counts by authenticated PeerID.
+// Duplicate transport connections never inflate logical peer metrics.
+func (n *Node) ConnectionCounts() (connected, outbound int) {
+	n.mu.RLock()
+	usable := make(map[libpeer.ID]struct{}, len(n.usable))
+	for id := range n.usable {
+		usable[id] = struct{}{}
+	}
+	n.mu.RUnlock()
+	connected = len(usable)
+	seenOutbound := make(map[libpeer.ID]struct{}, connected)
+	for _, connection := range n.host.Network().Conns() {
+		id := connection.RemotePeer()
+		if _, ok := usable[id]; ok && connection.Stat().Direction == libnetwork.DirOutbound {
+			seenOutbound[id] = struct{}{}
+		}
+	}
+	return connected, len(seenOutbound)
+}
+
 func (n *Node) localHello() Hello {
 	return Hello{
 		SchemaVersion:       WireSchema,

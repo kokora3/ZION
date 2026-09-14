@@ -23,7 +23,9 @@ func (r *Runtime) installStreamHandlers() {
 
 func (r *Runtime) discoverAndSync() {
 	discoveryContext, cancel := context.WithTimeout(r.ctx, 30*time.Second)
-	_ = r.p2p.Discover(discoveryContext)
+	if err := r.p2p.Discover(discoveryContext); err != nil {
+		r.cfg.Logger.Warn("P2P discovery completed without a candidate", "error", err)
+	}
 	cancel()
 	if r.cfg.FreshStateIsAuthoritative {
 		return
@@ -43,8 +45,10 @@ func (r *Runtime) discoverAndSync() {
 		err := r.Synchronize(syncContext)
 		stop()
 		if err == nil {
+			r.cfg.Logger.Debug("state synchronization completed")
 			delay = r.cfg.SyncInterval
 		} else if delay < r.cfg.SyncInterval {
+			r.cfg.Logger.Warn("state synchronization failed", "error", err)
 			delay = r.cfg.SyncInterval
 		} else {
 			delay = min(delay*2, time.Minute)
@@ -346,6 +350,7 @@ func (r *Runtime) installOffer(offer StateSnapshotOffer, offeredState chain.Stat
 		return err
 	}
 	r.state, r.height, r.sync, r.persisted = offeredState, offer.Height, Synced, true
+	r.cfg.Logger.Info("state snapshot installed", "height", offer.Height, "state_hash", offer.StateHash.String())
 	_ = r.registryIndex.Rebuild(offeredState)
 	for _, notice := range offer.Finalized {
 		r.remember(TransactionRecord{TxID: notice.TxID, Status: "FINALIZED", CommittedHeight: notice.Height,

@@ -12,6 +12,7 @@ export type NodeStatus = {
   consensus_active: boolean;
   validator_authorized: boolean;
   protocol_version: string;
+  software_version: string;
   object_store_enabled: boolean;
   object_count: number;
   object_bytes: number;

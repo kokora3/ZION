@@ -86,7 +86,7 @@ export class ZionAPI {
   }
   async status(signal?: AbortSignal): Promise<NodeStatus> {
     const value = record(await this.request("/status", { signal }));
-    for (const key of ["network_id", "runtime_state", "sync_status", "state_hash", "peer_id", "protocol_version"] as const) required(value, key, "string");
+    for (const key of ["network_id", "runtime_state", "sync_status", "state_hash", "peer_id", "protocol_version", "software_version"] as const) required(value, key, "string");
     required(value, "accepted_height", "number");
     if (!Array.isArray(value.roles)) throw new ZionAPIError("Node response is missing roles", "malformed");
     return value as NodeStatus;
