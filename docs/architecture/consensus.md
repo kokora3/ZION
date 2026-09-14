@@ -40,6 +40,8 @@ The local alpha model has exactly four validators with distinct Ed25519 consensu
 
 The application genesis document binds the `NetworkID`, empty Phase 4 `StateHash`, and validator-set hash. Its digest contributes to the CometBFT chain ID. The adapter independently checks chain ID, application genesis fields, and validator updates during `InitChain`. A wrong-network or wrong-genesis node therefore cannot silently participate in the alpha validator network.
 
+G1 freezes the shared Internet-alpha instance in `configs/alpha-1/genesis.json`: GenesisID `72ef0c7816d64255fc7b1da266c6a5b5ca345dd89cba2423fc8cfc8b4d1a61c6`, four public Ed25519 validators at power one, and CometBFT timestamp `2026-09-14T00:00:00Z`. The timestamp affects the committed genesis file bytes but is not a field of the ZION application-genesis hash. D1's `4cce10...` fingerprint remains local-only and Phase 5 deterministic keys remain test-only.
+
 CometBFT's greater-than-two-thirds rule means three of four equal-power validators can finalize and two cannot. One offline validator preserves liveness. Losing a second stops new finality without changing committed application state. Restoring a third validator resumes finality using isolated engine storage and the retained application state.
 
 ## Transaction wire boundary

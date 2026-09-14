@@ -35,7 +35,13 @@ func main() {
 	_ = flags.Parse(os.Args[1:])
 	args := flags.Args()
 	if len(args) == 0 {
-		fail("usage: zionctl [--api URL] status|peers|state|tx ...|governance ...|object ...|board ...|research ...|resource ...")
+		fail("usage: zionctl [--api URL] status|peers|state|tx ...|governance ...|object ...|board ...|research ...|resource ...|genesis ...")
+	}
+	if args[0] == "genesis" {
+		if err := runGenesisCommand(args[1:], os.Stdout); err != nil {
+			fail(err.Error())
+		}
+		return
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	var method, path string

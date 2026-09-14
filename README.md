@@ -22,7 +22,7 @@ ZION Web is a presentation client, not a node or wallet. It talks directly from 
 | Run a configured validator | Provision canonical validator files, then `docker compose --profile validator up -d` |
 | Develop ZION | Clone this repository and use the development commands below |
 
-`git clone` is for developers, not ordinary binary users. Portable packages include the binaries, safe local presets, startup helper, license, and operator documentation. The bundled local GenesisID is not a public-network trust assertion; replace it and bootstrap addresses with operator-verified values before joining a shared alpha deployment.
+`git clone` is for developers, not ordinary binary users. Portable packages include the binaries, safe local presets, startup helper, license, and operator documentation. The bundled D1 presets remain local-only. The authoritative shared Internet-alpha genesis is [`configs/alpha-1/genesis.json`](configs/alpha-1/genesis.json), with GenesisID `72ef0c7816d64255fc7b1da266c6a5b5ca345dd89cba2423fc8cfc8b4d1a61c6`.
 
 Docker users can start the optional local Web client with:
 
@@ -53,7 +53,7 @@ See `CONTRIBUTING.md` for contribution expectations and `docs/architecture/` for
 
 ## Alpha operation and recovery
 
-Start with a role-specific template under `configs/alpha-1/` and the verified GenesisID supplied with the validator genesis. The API and `/metrics` bind to loopback by default. General libp2p (typically UDP 42000), the local API (TCP 42001), Web (TCP 3000), and CometBFT P2P (TCP 26656) are separate services and must not share ports.
+Start with a shared role template ending in `.example.yaml` under `configs/alpha-1/` and verify the committed genesis locally with `go run ./cmd/zionctl genesis verify --manifest configs/alpha-1/validators-public.json --genesis configs/alpha-1/genesis.json --genesis-id configs/alpha-1/genesis-id.txt`. The API and `/metrics` bind to loopback by default. General libp2p (typically UDP 42000), the local API (TCP 42001), Web (TCP 3000), and CometBFT P2P (TCP 26656) are separate services and must not share ports. See [shared genesis](docs/protocol/shared-alpha-genesis.md).
 
 ```text
 zion-node run --config zion.yaml

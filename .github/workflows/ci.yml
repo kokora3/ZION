@@ -19,6 +19,13 @@ jobs:
           cache: true
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
+      - name: Verify frozen shared genesis
+        run: go run ./cmd/zionctl genesis verify --manifest configs/alpha-1/validators-public.json --genesis configs/alpha-1/genesis.json --genesis-id configs/alpha-1/genesis-id.txt --json
+      - name: Reject tracked validator private material
+        shell: bash
+        run: |
+          test -z "$(git ls-files | grep -E '(^|/)(priv_validator_key\.json|priv_validator_state\.json)$' || true)"
+          if git grep -n -E '"priv_key"[[:space:]]*:' -- configs docs; then exit 1; fi
       - name: Vet
         run: go vet ./...
       - name: Test

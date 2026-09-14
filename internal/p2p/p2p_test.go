@@ -158,6 +158,28 @@ func TestHelloCompatibilityAndMalformedInputs(t *testing.T) {
 	}
 }
 
+func TestDocumentedLocalOnlyGenesisCannotJoinSharedAlpha(t *testing.T) {
+	peerID := writeTestKey(t, filepath.Join(t.TempDir(), "peer.key"), "shared-genesis-separation")
+	sharedBytes, err := hex.DecodeString("72ef0c7816d64255fc7b1da266c6a5b5ca345dd89cba2423fc8cfc8b4d1a61c6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localBytes, err := hex.DecodeString("4cce10c9eb93aa5baff6ec94b13ff27662464668764a39efed6d59373a487d55")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared := protocol.HashDigest{Algorithm: protocol.HashAlgorithmSHA256, Digest: sharedBytes}
+	local := protocol.HashDigest{Algorithm: protocol.HashAlgorithmSHA256, Digest: localBytes}
+	node := &Node{cfg: Config{NetworkID: protocol.Alpha1NetworkID, NetworkFingerprint: shared,
+		SupportedVersions: []Version{CurrentVersion}}}
+	hello := Hello{SchemaVersion: WireSchema, NetworkID: protocol.Alpha1NetworkID, NetworkFingerprint: local,
+		SupportedVersions: []Version{CurrentVersion}, Roles: []Role{RoleNormal}, AuthenticatedPeerID: peerID.String(),
+		AdvertisedAddresses: []string{}}
+	if _, _, err := node.validateRemoteHello(hello, peerID); err == nil || !strings.Contains(err.Error(), "wrong ZION network fingerprint") {
+		t.Fatalf("local-only genesis was considered shared-alpha compatible: %v", err)
+	}
+}
+
 func TestPEXValidationMatrix(t *testing.T) {
 	peerA := writeTestKey(t, filepath.Join(t.TempDir(), "a.key"), "pex-a")
 	peerB := writeTestKey(t, filepath.Join(t.TempDir(), "b.key"), "pex-b")

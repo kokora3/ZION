@@ -1,5 +1,5 @@
-# Copy and edit for a real validator. Provision matching CometBFT genesis,
-# private-validator key/state, and node key under data/validator/consensus.
+# LOCAL-ONLY D1 VALIDATOR example. DO NOT USE FOR SHARED INTERNET zion-alpha-1.
+# Provision local matching CometBFT files only for isolated D1 testing.
 # The profile cannot grant authority: the verified genesis/canonical set does.
 network_id: zion-alpha-1
 genesis_id: 4cce10c9eb93aa5baff6ec94b13ff27662464668764a39efed6d59373a487d55
@@ -47,4 +47,3 @@ consensus:
   persistent_peers: ""
   rpc_listen_address: ""
   create_empty_blocks: false
-

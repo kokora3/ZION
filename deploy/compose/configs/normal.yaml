@@ -1,5 +1,5 @@
-# Local Docker NORMAL preset. Replace genesis_id and bootstrap_addresses before
-# joining a shared alpha deployment. The shipped value is local-only.
+# LOCAL-ONLY D1 Docker NORMAL preset. DO NOT USE FOR SHARED INTERNET zion-alpha-1.
+# Use configs/alpha-1/normal.example.yaml for shared-alpha preparation.
 network_id: zion-alpha-1
 genesis_id: 4cce10c9eb93aa5baff6ec94b13ff27662464668764a39efed6d59373a487d55
 data_directory: /var/lib/zion
@@ -46,4 +46,3 @@ consensus:
   persistent_peers: ""
   rpc_listen_address: ""
   create_empty_blocks: false
-

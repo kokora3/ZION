@@ -36,6 +36,14 @@ Malformed, oversized, wrong-network, unsupported, or non-canonical consensus-inp
 
 The alpha validator set is permissioned at genesis, contains four distinct equal-power consensus keys, and requires the engine's greater-than-two-thirds voting threshold. Loss of quorum stops liveness instead of permitting unsafe finalization. Runtime changes require an executed canonical governance proposal and are emitted through ABCI; direct transactions and local configuration cannot authorize them. CometBFT databases and wire messages are engine implementation details, not ZION canonical state or compatibility formats. ZION does not claim to have formally verified CometBFT.
 
+## G1 shared-genesis trust boundary
+
+The authoritative shared `zion-alpha-1` GenesisID is `72ef0c7816d64255fc7b1da266c6a5b5ca345dd89cba2423fc8cfc8b4d1a61c6`. It is derived by the existing consensus code from the application genesis that binds NetworkID, initial StateHash, and the canonical four-validator public set. The committed CometBFT timestamp is frozen for exact-file reproducibility but is not part of the ZION GenesisID. Any genesis mutation is a different or invalid network instance and must never be presented under the old digest.
+
+The committed genesis and validator manifest contain public material only. The corresponding private validator keys remain under a gitignored operator-controlled directory, must be backed up offline/encrypted, and must be distributed one key per future validator host. Private-key loss is serious and cannot be repaired from public genesis data; no automatic compromise-recovery claim is made. POSIX 0600/0700 modes are applied where supported, while Windows operators must independently verify NTFS ACL protection.
+
+Bootstrap nodes, DNS names, IP addresses, cloud regions, libp2p PeerIDs, and local role/configuration flags are outside genesis authority. In particular, the first D2A NORMAL + BOOTSTRAP host receives no validator private key. Git, Docker contexts, release artifacts, and ordinary CI must contain no private validator key or signing state.
+
 ## Phase 6 governance boundaries
 
 There is no governance superuser or local-admin bypass after deterministic genesis bootstrap. A governance vote is not a CometBFT consensus vote: governance gives one vote to each eligible ACTIVE IdentityID, independent of validator power, tokens, stake, reputation, identity age, or machine resources. PENDING, SUSPENDED, and REVOKED identities cannot vote.

@@ -1,0 +1,50 @@
+{
+  "genesis_time": "2026-09-14T00:00:00Z",
+  "chain_id": "zion-alpha-1-72ef0c7816d6",
+  "initial_height": "0",
+  "validators": [
+    {
+      "address": "07D32F2F4BC8E180115941CA20BA5F66E3B6AA67",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "cBEu2r3Y4YL12ngpy8waqgffUE/ay6+1x5QIQ+rBtLQ="
+      },
+      "power": "1",
+      "name": "validator-1"
+    },
+    {
+      "address": "68A257162378A47321955DEB4D202309BBFBA24D",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "wDMQ/puxAZB9a86HYR6NLnj/etopd4ux6fQIoG1pKIU="
+      },
+      "power": "1",
+      "name": "validator-3"
+    },
+    {
+      "address": "BA6A3EE05726409C64C89AF21762750288B76DAE",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "w6mDx0LtN9Yct9k0ZS32r1KLC6ToUO0DXVcqkEEjGLM="
+      },
+      "power": "1",
+      "name": "validator-4"
+    },
+    {
+      "address": "7E7DF9105E5CB125537D9F0C22045C99DB8A95D4",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "50ZjKVKuIKUIWWEEvBobUvd5nYk54+0pgN1Z2kwgy2c="
+      },
+      "power": "1",
+      "name": "validator-2"
+    }
+  ],
+  "app_hash": "52B47AF40A8068309BCD792303D8AFB1B09EE3687A930D45D9692D64ED7C0505",
+  "app_state": {
+    "schema_version": 1,
+    "network_id": "zion-alpha-1",
+    "state_hash": "zion:state:sha256:52b47af40a8068309bcd792303d8afb1b09ee3687a930d45d9692d64ed7c0505",
+    "validator_set_hash": "sha256:168f8207d5dd8e766bc82c6f0fee652467a8a463a24f60fdee1e3d6850dd872c"
+  }
+}

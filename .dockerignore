@@ -2,8 +2,11 @@
 .github
 .gocache*
 .gomodcache*
+.npm-cache*
+.docker-config*
 .next
 .phase*
+.local
 .vscode
 .idea
 apps/web/.e2e
@@ -33,4 +36,3 @@ tmp
 **/node_key.json
 **/priv_validator_key.json
 **/priv_validator_state.json
-

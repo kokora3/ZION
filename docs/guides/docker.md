@@ -13,7 +13,7 @@ docker compose --profile normal --profile web up -d
 
 Use only one node profile at a time with the default host ports. NORMAL uses volume `zion-normal-data`; BOOTSTRAP uses `zion-bootstrap-data`; VALIDATOR uses `zion-validator-data`. Two containers must never write one volume. BOOTSTRAP remains a replaceable discovery service. VALIDATOR requires externally provisioned CometBFT genesis, private-validator key/state, and node key and remains authorized only when the verified genesis/canonical validator set says so. Set `ZION_VALIDATOR_CONFIG` to a reviewed config path if needed.
 
-The shipped NORMAL/BOOTSTRAP configs use a documented local-only GenesisID so a fresh isolated node can start. Replace it and bootstrap peers with verified deployment values before shared operation. Do not treat the preset as a public genesis statement.
+The shipped NORMAL/BOOTSTRAP Compose configs use the documented local-only GenesisID so a fresh isolated node can start. For shared operation, use the public genesis under `configs/alpha-1/`, whose frozen GenesisID is `72ef0c7816d64255fc7b1da266c6a5b5ca345dd89cba2423fc8cfc8b4d1a61c6`, and add verified bootstrap peers. Do not treat the D1 Compose preset as a public genesis statement.
 
 ## Ports and API boundary
 

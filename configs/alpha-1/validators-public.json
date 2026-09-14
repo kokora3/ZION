@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "network_id": "zion-alpha-1",
+  "genesis_time": "2026-09-14T00:00:00Z",
+  "validators": [
+    {
+      "name": "validator-1",
+      "public_key": {
+        "algorithm": "ed25519",
+        "value": "cBEu2r3Y4YL12ngpy8waqgffUE/ay6+1x5QIQ+rBtLQ="
+      },
+      "power": 1
+    },
+    {
+      "name": "validator-3",
+      "public_key": {
+        "algorithm": "ed25519",
+        "value": "wDMQ/puxAZB9a86HYR6NLnj/etopd4ux6fQIoG1pKIU="
+      },
+      "power": 1
+    },
+    {
+      "name": "validator-4",
+      "public_key": {
+        "algorithm": "ed25519",
+        "value": "w6mDx0LtN9Yct9k0ZS32r1KLC6ToUO0DXVcqkEEjGLM="
+      },
+      "power": 1
+    },
+    {
+      "name": "validator-2",
+      "public_key": {
+        "algorithm": "ed25519",
+        "value": "50ZjKVKuIKUIWWEEvBobUvd5nYk54+0pgN1Z2kwgy2c="
+      },
+      "power": 1
+    }
+  ]
+}

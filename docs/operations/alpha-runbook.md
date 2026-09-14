@@ -5,12 +5,14 @@ ZION `v0.1.0-alpha.1` is experimental. History, genesis, validator membership, a
 ## Start a node
 
 1. Install the matching `zion-node` and `zionctl` archive and verify it against `SHA256SUMS` through a trusted channel.
-2. Copy the matching profile from `configs/alpha-1`. Replace the GenesisID with the value from the shared validator genesis, choose a unique data directory, and add authenticated `/p2p/<PeerID>` bootstrap addresses.
+2. Verify `configs/alpha-1/genesis.json` against `genesis-id.txt` and `validators-public.json`, then copy the matching shared profile ending in `.example.yaml`. Its frozen GenesisID is `72ef0c7816d64255fc7b1da266c6a5b5ca345dd89cba2423fc8cfc8b4d1a61c6`; choose a unique data directory and add authenticated `/p2p/<PeerID>` bootstrap addresses. Files `normal.yaml`, `bootstrap.yaml`, and `validator.yaml.example` are D1 local-only presets.
 3. Keep member signing, libp2p, CometBFT validator, and API bearer secrets separate. Restrict their files to the operating-system account where supported.
 4. Keep the local API at `127.0.0.1:42001` unless explicit bearer authentication, firewalling, and TLS termination are configured.
 5. Run `zion-node run --config zion.yaml`. Check `zionctl status`, `zionctl peers`, `GET /v1/health`, and `GET /metrics`.
 
 NORMAL nodes do not run CometBFT. The outbound-only profile opens no general-P2P listener and joins through outbound authenticated connections. BOOTSTRAP is a replaceable discovery role, not authority. Validators must use separate CometBFT data, keys, and ports; their public validator key must match both the shared genesis and canonical governance set.
+
+The first D2A node is NORMAL + BOOTSTRAP, not a validator. Provision the shared public genesis identity and a fresh independent libp2p identity only; do not copy any validator private key to it.
 
 ## Ports
 

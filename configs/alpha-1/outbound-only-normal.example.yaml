@@ -1,6 +1,6 @@
 # Outbound-only NORMAL template: no inbound libp2p listener is opened.
 network_id: zion-alpha-1
-genesis_id: <verified-64-character-lowercase-genesis-sha256>
+genesis_id: 72ef0c7816d64255fc7b1da266c6a5b5ca345dd89cba2423fc8cfc8b4d1a61c6
 data_directory: <outbound-normal-data-directory>
 log_level: INFO
 roles: [NORMAL]

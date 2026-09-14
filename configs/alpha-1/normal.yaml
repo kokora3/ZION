@@ -1,6 +1,5 @@
-# Portable local NORMAL preset. This starts a self-contained local alpha node.
-# Replace genesis_id and bootstrap_addresses with operator-verified values before
-# joining a shared zion-alpha-1 deployment.
+# LOCAL-ONLY D1 NORMAL preset. DO NOT USE FOR SHARED INTERNET zion-alpha-1.
+# Use normal.example.yaml and verify configs/alpha-1/genesis.json for the shared network.
 network_id: zion-alpha-1
 genesis_id: 4cce10c9eb93aa5baff6ec94b13ff27662464668764a39efed6d59373a487d55
 data_directory: data/normal
@@ -47,4 +46,3 @@ consensus:
   persistent_peers: ""
   rpc_listen_address: ""
   create_empty_blocks: false
-

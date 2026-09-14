@@ -16,6 +16,8 @@ profile.cov
 # Local Go build/test caches
 .gocache*
 .gomodcache*
+.npm-cache*
+.docker-config*
 
 # Repository-local build and release outputs
 /build/
@@ -35,6 +37,7 @@ profile.cov
 /data/
 /zion-data/
 /.zion/
+/.local/
 
 # Runtime identity, signing, cache, and snapshot files. Public protocol
 # fixtures use distinct filenames under testdata.
