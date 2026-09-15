@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"sort"
@@ -49,10 +50,11 @@ type PeerCache struct {
 	limits  Limits
 	entries map[libpeer.ID]CachedPeer
 	now     func() time.Time
+	jitter  func(time.Duration) time.Duration
 }
 
 func OpenPeerCache(path string, limits Limits) (*PeerCache, error) {
-	cache := &PeerCache{path: path, limits: limits, entries: make(map[libpeer.ID]CachedPeer), now: time.Now}
+	cache := &PeerCache{path: path, limits: limits, entries: make(map[libpeer.ID]CachedPeer), now: time.Now, jitter: randomJitter}
 	data, err := readBoundedFile(path, MaxPeerCacheFileSize)
 	if os.IsNotExist(err) {
 		return cache, nil
@@ -231,21 +233,83 @@ func (c *PeerCache) markFailure(peerID libpeer.ID, addresses []ma.Multiaddr, sou
 	if record.Failures < 32 {
 		record.Failures++
 	}
-	delay := c.limits.BackoffInitial
-	for i := uint8(1); i < record.Failures && delay < c.limits.BackoffMaximum; i++ {
-		if delay > c.limits.BackoffMaximum/2 {
-			delay = c.limits.BackoffMaximum
-			break
-		}
-		delay *= 2
-	}
-	if delay > c.limits.BackoffMaximum {
-		delay = c.limits.BackoffMaximum
-	}
+	delay := c.failureDelay(record.Failures)
 	record.NextAttemptUnixMS = c.now().Add(delay).UnixMilli()
 	c.entries[peerID] = record
 	c.evictLocked()
 	return c.saveLocked()
+}
+
+func randomJitter(window time.Duration) time.Duration {
+	if window <= 1 {
+		return 0
+	}
+	return time.Duration(rand.Int64N(int64(window)))
+}
+
+// failureDelay returns exponential backoff plus up to 25 percent jitter while
+// keeping the absolute delay within BackoffMaximum. Reserving the top fifth of
+// the range preserves jitter after repeated failures reach the cap.
+func (c *PeerCache) failureDelay(failures uint8) time.Duration {
+	maximum := c.limits.BackoffMaximum
+	baseCap := maximum - maximum/5
+	if baseCap < c.limits.BackoffInitial {
+		baseCap = c.limits.BackoffInitial
+	}
+	if baseCap > maximum {
+		baseCap = maximum
+	}
+	base := c.limits.BackoffInitial
+	for i := uint8(1); i < failures && base < baseCap; i++ {
+		if base > baseCap/2 {
+			base = baseCap
+			break
+		}
+		base *= 2
+	}
+	if base > baseCap {
+		base = baseCap
+	}
+	window := min(base/4, maximum-base)
+	return base + c.jitter(window)
+}
+
+func (c *PeerCache) nextAttemptDelay(self libpeer.ID, connected map[libpeer.ID]struct{}) (time.Duration, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	now := c.now()
+	var earliest time.Duration
+	found := false
+	for peerID, record := range c.entries {
+		if peerID == self || record.NextAttemptUnixMS == 0 {
+			continue
+		}
+		if _, ok := connected[peerID]; ok {
+			continue
+		}
+		delay := time.UnixMilli(record.NextAttemptUnixMS).Sub(now)
+		if delay <= 0 {
+			return 0, true
+		}
+		if !found || delay < earliest {
+			earliest, found = delay, true
+		}
+	}
+	return earliest, found
+}
+
+func (c *PeerCache) hasCandidate(self libpeer.ID, connected map[libpeer.ID]struct{}) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for peerID, record := range c.entries {
+		if peerID == self || len(record.Addresses) == 0 {
+			continue
+		}
+		if _, ok := connected[peerID]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *PeerCache) backoffActive(peerID libpeer.ID, addresses []ma.Multiaddr) bool {

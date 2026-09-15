@@ -79,6 +79,17 @@ wait_for_health
 bootstrap_after="$(status_json)"
 [[ "$(json_string_field "$bootstrap_after" peer_id)" == "$bootstrap_peer" ]] || die "PeerID changed after container recreation"
 [[ "$(json_string_field "$bootstrap_after" state_hash)" == "$bootstrap_state" ]] || die "StateHash changed after container recreation"
+for attempt in $(seq 1 24); do
+  normal_status="$(test_compose exec -T zion-node-normal zionctl --bearer-token-file /var/lib/zion/runtime/api-token status 2>/dev/null || true)"
+  normal_peers="$(test_compose exec -T zion-node-normal zionctl --bearer-token-file /var/lib/zion/runtime/api-token peers 2>/dev/null || true)"
+  if [[ "$normal_status" == *'"peer_count":1'* && "$normal_status" == *'"outbound_peer_count":1'* &&
+        "$normal_peers" == *"$bootstrap_peer"* ]]; then
+    break
+  fi
+  sleep 5
+done
+[[ "$normal_status" == *'"peer_count":1'* && "$normal_status" == *'"outbound_peer_count":1'* &&
+   "$normal_peers" == *"$bootstrap_peer"* ]] || die "running NORMAL did not reconnect after BOOTSTRAP recreation"
 
 bad_genesis="$RUNTIME_ROOT/config/bad-genesis.yaml"
 sed -e 's/^genesis_id: .*/genesis_id: 4cce10c9eb93aa5baff6ec94b13ff27662464668764a39efed6d59373a487d55/' \

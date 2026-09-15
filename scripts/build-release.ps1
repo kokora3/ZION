@@ -47,6 +47,12 @@ function Build-Package([string]$GoOS, [string]$GoArch, [string]$Suffix) {
   foreach ($Config in @("normal.yaml", "bootstrap.yaml", "validator.yaml.example")) {
     Copy-Item -LiteralPath (Join-Path $Repository "configs\alpha-1\$Config") -Destination (Join-Path $Stage "configs\$Config")
   }
+  if ($GoOS -eq "windows") {
+    foreach ($Config in @("normal.yaml", "bootstrap.yaml")) {
+      & (Join-Path $Stage "zion-node.exe") config validate --config (Join-Path $Stage "configs\$Config") | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw "packaged zion-node rejected packaged config $Config" }
+    }
+  }
   Copy-Item -LiteralPath (Join-Path $Repository "docs\operations") -Destination (Join-Path $Stage "docs\operations") -Recurse
   New-Item -ItemType Directory -Force -Path (Join-Path $Stage "docs\guides") | Out-Null
   foreach ($Guide in @("install-windows.md", "install-linux.md", "docker.md")) {

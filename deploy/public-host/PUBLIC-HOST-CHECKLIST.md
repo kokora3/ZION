@@ -25,7 +25,10 @@ D2A validates repository and local Docker behavior only. Real-host boxes below i
 - [ ] Container restart retains PeerID and StateHash
 - [ ] Container recreation/update retains PeerID, StateHash, and objects
 - [ ] Host reboot retains PeerID and StateHash
-- [ ] Windows reconnects after host restart
+- [ ] Windows process remains running throughout the host reboot (record PID and PeerID)
+- [ ] Windows reconnects after host restart without a local restart
+- [ ] Windows returns to `peer_count=1`, `outbound_peer_count=1`, and `sync_status=SYNCED`
+- [ ] Windows peers and public status both show the same authenticated bootstrap PeerID
 - [ ] Board synchronization observed
 - [ ] Object fetch observed
 - [ ] Canonical state synchronization observed

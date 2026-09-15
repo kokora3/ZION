@@ -21,14 +21,14 @@ func (n *Node) Discover(ctx context.Context) error {
 		{SourceManual, append([]string(nil), n.cfg.ManualPeers...)},
 	}
 	var lastErr error
+	connectedAny := false
 	for _, group := range groups {
-		connected := false
 		for _, address := range group.addresses {
 			if err := n.Dial(ctx, address, group.source); err != nil {
 				lastErr = err
 				continue
 			}
-			connected = true
+			connectedAny = true
 			info, _ := parseDialAddress(address)
 			if info != nil {
 				candidates, err := n.RequestPeers(ctx, info.ID)
@@ -36,13 +36,13 @@ func (n *Node) Discover(ctx context.Context) error {
 					n.dialPEXHints(ctx, candidates)
 				}
 			}
-			if len(n.UsablePeers()) >= n.cfg.Limits.TargetOutboundPeers {
+			if n.outboundTargetReached() {
 				return nil
 			}
 		}
-		if connected {
-			return nil
-		}
+	}
+	if connectedAny {
+		return nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no P2P discovery candidates")
@@ -81,7 +81,7 @@ func (n *Node) dialPEXHints(ctx context.Context, records []PeerRecord) {
 			}
 		}
 		_ = n.dialInfo(ctx, libpeer.AddrInfo{ID: peerID, Addrs: addresses}, SourcePEX)
-		if len(n.UsablePeers()) >= n.cfg.Limits.TargetOutboundPeers {
+		if n.outboundTargetReached() {
 			return
 		}
 	}

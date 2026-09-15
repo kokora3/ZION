@@ -276,6 +276,7 @@ func TestPeerCacheFailureBackoffIsBoundedAndPersisted(t *testing.T) {
 	}
 	fixed := time.Unix(1_700_000_000, 0)
 	cache.now = func() time.Time { return fixed }
+	cache.jitter = func(window time.Duration) time.Duration { return window }
 	peerID := writeTestKey(t, filepath.Join(t.TempDir(), "unreachable.key"), "unreachable")
 	address, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1/quic-v1")
 	for range 40 {
@@ -300,6 +301,33 @@ func TestPeerCacheFailureBackoffIsBoundedAndPersisted(t *testing.T) {
 	reloaded.now = cache.now
 	if !reloaded.backoffActive(peerID, []ma.Multiaddr{address}) || len(reloaded.SuccessfulCandidates("")) != 0 {
 		t.Fatal("failed candidate was trusted or its backoff was not persisted")
+	}
+}
+
+func TestPeerCacheBackoffAddsBoundedJitterAndSuccessResetsIt(t *testing.T) {
+	cfg := testConfig(t, "cache-jitter", false)
+	cache, err := OpenPeerCache(cfg.PeerCachePath, cfg.Limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed := time.Unix(1_700_000_000, 0)
+	cache.now = func() time.Time { return fixed }
+	cache.jitter = func(window time.Duration) time.Duration { return window / 2 }
+	peerID := writeTestKey(t, filepath.Join(t.TempDir(), "jitter.key"), "jitter-peer")
+	address, _ := ma.NewMultiaddr("/ip4/127.0.0.1/udp/1/quic-v1")
+	if err := cache.markFailure(peerID, []ma.Multiaddr{address}, SourceBootstrap); err != nil {
+		t.Fatal(err)
+	}
+	delay := time.UnixMilli(cache.entries[peerID].NextAttemptUnixMS).Sub(fixed)
+	if delay < cfg.Limits.BackoffInitial || delay >= cfg.Limits.BackoffInitial+cfg.Limits.BackoffInitial/4 {
+		t.Fatalf("first jittered backoff is outside its bound: %v", delay)
+	}
+	if err := cache.markSuccess(peerID, []ma.Multiaddr{address}, SourceBootstrap); err != nil {
+		t.Fatal(err)
+	}
+	record := cache.entries[peerID]
+	if record.Failures != 0 || record.NextAttemptUnixMS != 0 || !record.Successful {
+		t.Fatalf("successful reconnect did not reset backoff: %+v", record)
 	}
 }
 

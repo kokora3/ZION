@@ -14,4 +14,4 @@ Release mode pulls the pinned D1 image in `ZION_IMAGE`. Until that image is deli
 
 The override publishes only the configured host UDP port to container UDP 42000. API and metrics TCP 42001 have no host publication. Config is mounted read-only at `/etc/zion/zion.yaml`; all replaceable-container state, including the PeerID, remains under `/var/lib/zion` on the configured host bind mount.
 
-See [the full public Internet node guide](../../docs/deployment/public-internet-node.md) and [the operator checklist](PUBLIC-HOST-CHECKLIST.md).
+See [the full public Internet node guide](../../docs/deployment/public-internet-node.md), [the operator checklist](PUBLIC-HOST-CHECKLIST.md), and [the persistent reconnect retest](../../docs/operations/persistent-bootstrap-reconnect.md).

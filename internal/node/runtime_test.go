@@ -325,6 +325,74 @@ func TestOutboundRuntimeSyncRelayAPIBootstrapLossAndRestart(t *testing.T) {
 	}
 }
 
+func TestRunningOutboundRuntimeReconnectsAndResynchronizesAfterBootstrapRestart(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+
+	bootstrapCfg := testRuntimeConfig(t, "persistent-runtime-bootstrap", true, true)
+	bootstrapCfg.P2P.Roles = []p2p.Role{p2p.RoleNormal, p2p.RoleBootstrap}
+	bootstrap, err := New(bootstrapCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bootstrap.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer bootstrap.Stop(context.Background())
+	bootstrapID := bootstrap.P2P().PeerID()
+	bootstrapAddress := bootstrap.P2P().FullAddresses()[0].String()
+	bootstrapCfg.P2P.ListenAddresses = []string{strings.TrimSuffix(bootstrapAddress, "/p2p/"+bootstrapID.String())}
+
+	normalCfg := testRuntimeConfig(t, "persistent-runtime-normal", false, false)
+	normalCfg.P2P.BootstrapAddresses = []string{bootstrapAddress}
+	normalCfg.P2P.Limits.TargetOutboundPeers = 1
+	normalCfg.P2P.Limits.DialTimeout = 100 * time.Millisecond
+	normalCfg.P2P.Limits.HandshakeTimeout = 100 * time.Millisecond
+	normalCfg.P2P.Limits.BackoffInitial = 20 * time.Millisecond
+	normalCfg.P2P.Limits.BackoffMaximum = 100 * time.Millisecond
+	normalCfg.SyncTimeout = 500 * time.Millisecond
+	normal, err := New(normalCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := normal.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer normal.Stop(context.Background())
+	waitRuntime(t, normal, func() bool {
+		connected, outbound := normal.P2P().ConnectionCounts()
+		normal.mu.RLock()
+		defer normal.mu.RUnlock()
+		return connected == 1 && outbound == 1 && normal.sync == Synced
+	})
+
+	if err := bootstrap.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitRuntime(t, normal, func() bool {
+		connected, outbound := normal.P2P().ConnectionCounts()
+		return connected == 0 && outbound == 0
+	})
+
+	restarted, err := New(bootstrapCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Stop(context.Background())
+	if restarted.P2P().PeerID() != bootstrapID {
+		t.Fatal("persistent bootstrap PeerID changed across runtime recreation")
+	}
+	waitRuntime(t, normal, func() bool {
+		connected, outbound := normal.P2P().ConnectionCounts()
+		normal.mu.RLock()
+		defer normal.mu.RUnlock()
+		return connected == 1 && outbound == 1 && normal.sync == Synced
+	})
+}
+
 const runtimePortBindAttempts = 5
 
 type runtimeTCPReservation struct {

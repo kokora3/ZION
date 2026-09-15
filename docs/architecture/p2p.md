@@ -72,6 +72,8 @@ The peer cache is versioned local JSON, not a wire or consensus format. It store
 
 Defaults are 64 connected ZION peers, 12 outbound targets, 8 concurrent dials, 256 cached peers, 8 addresses per peer, and 32 PEX records per response. Hard maxima are 256 connected peers, 32 concurrent dials, 1,024 cache entries, 16 addresses per peer, and 64 PEX records. Dial, hello, and PEX work uses contexts, deadlines, and capped exponential backoff.
 
+Outbound connectivity is maintained for the node lifetime, not only during startup. A single cancellable worker wakes when the last authenticated connection to a peer closes and when a newly authenticated peer contributes addresses. While the authenticated outbound count is below `target_outbound_peers`, it retries the existing cache, configured bootstrap, fallback, manual, and PEX sources in the same priority order. Per-peer failure delay starts at two seconds, doubles, adds bounded jitter, and caps at five minutes; success clears that peer's failure state. Existing dial singleflight and the `max_concurrent_dials` semaphore remain the duplicate/concurrency boundary. Closing the P2P node cancels the worker and its current timer/dial context before the host closes.
+
 ## Bounded peer exchange
 
 The `/zion/pex/0.1.0` protocol exchanges canonical CBOR hints. A response contains public PeerID, addresses, and known roles for a bounded sample of usable peers. It excludes self, requester, duplicates, peers without advertised reachable addresses, secrets, filesystem paths, and unrelated interfaces. PEX is untrusted discovery data: every candidate must still authenticate the claimed PeerID at the libp2p transport and pass network, genesis, version, role, and message validation.
@@ -83,6 +85,8 @@ Hello is limited to 16 KiB, eight versions, three roles, eight advertised addres
 A bootstrap node is an ordinary reachable introducer. It can authenticate connections and return PEX hints, but it cannot mutate chain state, approve membership, grant governance or validator power, or impersonate another PeerID. Once normal peers discover and connect directly, the bootstrap may disappear without breaking that connection. A restarted node can reconnect from its persisted peer key and successful cache without bootstrap availability.
 
 A NORMAL node may use no listen addresses and initiate all connections outbound. It can dial bootstrap, complete hello, obtain PEX, and dial another reachable peer without public IP, port forwarding, UPnP, NAT-PMP, AutoNAT, hole punching, DCUtR, relay, or TURN.
+
+Configured DNS bootstrap multiaddrs remain durable candidates. Each new transport dial uses the DNS multiaddr again, so a later retry can resolve a changed location while the required `/p2p/<PeerID>` continues authenticating the expected peer.
 
 ## Threat and phase boundaries
 

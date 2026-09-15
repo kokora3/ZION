@@ -24,7 +24,7 @@ Authenticated usable peers serve bounded canonical offers on /zion/state/0.1.0. 
 
 This is alpha snapshot synchronization, not a light client. Authentication, network/genesis binding, canonical bytes, and hash integrity do not prove Byzantine finality. The receiver compares valid available peers and rejects same-height conflicts, but operators should use trusted/checkpointed finalized metadata until a real light-client proof is implemented.
 
-Non-validator nodes retry synchronization with capped backoff. Successful synchronization is periodically refreshed so a relayed transaction can later become visible as committed state. Snapshot offers may include at most 256 bounded recent finality notices; these are operational status hints tied to the accepted offer and never replace canonical validation.
+Non-validator nodes retry synchronization with capped backoff. General P2P independently maintains outbound peers for the full runtime lifetime, so synchronization can recover after a configured bootstrap restarts without restarting the local node. Successful synchronization is periodically refreshed so a relayed transaction can later become visible as committed state. Snapshot offers may include at most 256 bounded recent finality notices; these are operational status hints tied to the accepted offer and never replace canonical validation.
 
 ## Transaction relay and finality
 

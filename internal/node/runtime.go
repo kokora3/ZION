@@ -265,7 +265,9 @@ func (r *Runtime) Start(parent context.Context) (err error) {
 	r.startedAt = time.Now()
 	runtimeContext := r.ctx
 	r.mu.Unlock()
-	p2pNode, err := p2p.NewNode(runtimeContext, r.cfg.P2P)
+	p2pConfig := r.cfg.P2P
+	p2pConfig.Logger = r.cfg.Logger.With("component", "p2p")
+	p2pNode, err := p2p.NewNode(runtimeContext, p2pConfig)
 	if err != nil {
 		return err
 	}

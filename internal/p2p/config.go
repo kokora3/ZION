@@ -2,6 +2,8 @@ package p2p
 
 import (
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"path/filepath"
 
@@ -23,6 +25,7 @@ type Config struct {
 	Roles              []Role
 	SupportedVersions  []Version
 	Limits             Limits
+	Logger             *slog.Logger
 }
 
 func DefaultConfig(dataDir string, fingerprint protocol.HashDigest) Config {
@@ -62,6 +65,9 @@ func (c *Config) normalize() error {
 	c.SupportedVersions = versions
 	if err := c.Limits.validate(); err != nil {
 		return err
+	}
+	if c.Logger == nil {
+		c.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	c.ListenAddresses = append([]string(nil), c.ListenAddresses...)
 	c.AdvertiseAddresses = append([]string(nil), c.AdvertiseAddresses...)

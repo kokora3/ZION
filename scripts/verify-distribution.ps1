@@ -22,6 +22,8 @@ $Required = @(
   "deploy/public-host/update.sh", "deploy/public-host/backup.sh",
   "deploy/public-host/README.md", "deploy/public-host/PUBLIC-HOST-CHECKLIST.md",
   "docs/deployment/public-internet-node.md",
+  "docs/operations/persistent-bootstrap-reconnect.md",
+  "docs/adr/ADR-0089-persistent-outbound-peer-maintenance.md",
   "configs/alpha-1/normal.yaml", "configs/alpha-1/bootstrap.yaml", "configs/alpha-1/validator.yaml.example",
   "deploy/portable/run-zion-node.cmd", "deploy/portable/run-zion-node.sh",
   "deploy/systemd/zion-node.service"
@@ -51,6 +53,22 @@ if ($PublicOverride -notmatch 'target:\s*42000' -or $PublicOverride -notmatch 'p
 }
 if ($PublicOverride -notmatch 'max-size:\s*"10m"' -or $PublicOverride -notmatch 'max-file:\s*"5"') {
   throw "public-host Docker logs are not bounded"
+}
+$DeployHelper = Get-Content -LiteralPath (Join-Path $Repository "deploy/public-host/deploy.sh") -Raw
+$UpdateHelper = Get-Content -LiteralPath (Join-Path $Repository "deploy/public-host/update.sh") -Raw
+$PublicHostTest = Get-Content -LiteralPath (Join-Path $Repository "deploy/public-host/test.sh") -Raw
+if ($DeployHelper -notmatch 'bash\s+"\$SCRIPT_DIR/status\.sh"' -or
+    $UpdateHelper -notmatch 'bash\s+"\$SCRIPT_DIR/backup\.sh"') {
+  throw "public-host helper chaining depends on Git executable bits"
+}
+if ($PublicHostTest -notmatch 'running NORMAL did not reconnect after BOOTSTRAP recreation') {
+  throw "public-host test does not cover persistent NORMAL reconnect"
+}
+foreach ($Relative in @("configs/alpha-1/normal.yaml", "configs/alpha-1/bootstrap.yaml", "configs/alpha-1/validator.yaml.example")) {
+  $Text = Get-Content -LiteralPath (Join-Path $Repository $Relative) -Raw
+  if ($Text -notmatch '(?m)^\s+advertise_addresses:\s*\[\]\s*$') {
+    throw "packaged config schema is missing advertise_addresses: $Relative"
+  }
 }
 $RuntimeMaterial = @(
   "deploy/public-host/.env.example", "deploy/public-host/bootstrap.yaml", "deploy/public-host/compose.override.yml",

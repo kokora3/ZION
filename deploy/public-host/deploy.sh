@@ -22,4 +22,4 @@ fi
 
 compose up -d --no-build "$SERVICE_NAME"
 wait_for_health
-"$SCRIPT_DIR/status.sh"
+bash "$SCRIPT_DIR/status.sh"

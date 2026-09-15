@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	libp2p "github.com/libp2p/go-libp2p"
@@ -27,19 +28,24 @@ type RemotePeer struct {
 }
 
 type Node struct {
-	cfg          Config
-	host         libhost.Host
-	cache        *PeerCache
-	cacheLoadErr error
-	ctx          context.Context
-	cancel       context.CancelFunc
-	dialSem      chan struct{}
-	mu           sync.RWMutex
-	usable       map[libpeer.ID]RemotePeer
-	closed       bool
-	closeOnce    sync.Once
-	gater        *connectionGater
-	dials        singleflight.Group
+	cfg                  Config
+	host                 libhost.Host
+	cache                *PeerCache
+	cacheLoadErr         error
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	dialSem              chan struct{}
+	mu                   sync.RWMutex
+	usable               map[libpeer.ID]RemotePeer
+	closed               bool
+	closeOnce            sync.Once
+	gater                *connectionGater
+	dials                singleflight.Group
+	maintenanceWake      chan struct{}
+	maintenanceOnce      sync.Once
+	maintenanceWG        sync.WaitGroup
+	maintenanceAttempts  atomic.Uint64
+	maintenanceSuccesses atomic.Uint64
 }
 
 func NewNode(parent context.Context, cfg Config) (*Node, error) {
@@ -92,17 +98,26 @@ func NewNode(parent context.Context, cfg Config) (*Node, error) {
 	}
 	ctx, cancel := context.WithCancel(parent)
 	node := &Node{cfg: cfg, host: host, cache: cache, cacheLoadErr: cacheErr, ctx: ctx, cancel: cancel,
-		dialSem: make(chan struct{}, cfg.Limits.MaxConcurrentDials), usable: make(map[libpeer.ID]RemotePeer), gater: gater}
+		dialSem: make(chan struct{}, cfg.Limits.MaxConcurrentDials), usable: make(map[libpeer.ID]RemotePeer), gater: gater,
+		maintenanceWake: make(chan struct{}, 1)}
 	host.SetStreamHandler(HelloProtocolID, node.handleHello)
 	host.SetStreamHandler(PEXProtocolID, node.handlePEX)
 	host.Network().Notify(&libnetwork.NotifyBundle{DisconnectedF: func(network libnetwork.Network, connection libnetwork.Conn) {
 		gater.released(connection.RemotePeer())
 		if len(network.ConnsToPeer(connection.RemotePeer())) == 0 {
 			node.mu.Lock()
+			_, wasUsable := node.usable[connection.RemotePeer()]
 			delete(node.usable, connection.RemotePeer())
 			node.mu.Unlock()
+			if wasUsable {
+				_, outbound := node.ConnectionCounts()
+				node.cfg.Logger.Info("outbound peer disconnected", "peer_id", connection.RemotePeer().String(),
+					"outbound_peers", outbound, "target_outbound_peers", node.cfg.Limits.TargetOutboundPeers)
+				node.wakeMaintenance()
+			}
 		}
 	}})
+	node.startOutboundMaintenance()
 	return node, nil
 }
 
@@ -256,6 +271,7 @@ func (n *Node) promote(remote RemotePeer, source PeerSource, fallbackAddress ma.
 		n.mu.Unlock()
 		return err
 	}
+	n.wakeMaintenance()
 	return nil
 }
 
@@ -399,6 +415,7 @@ func (n *Node) Close() error {
 		n.closed = true
 		n.mu.Unlock()
 		n.cancel()
+		n.maintenanceWG.Wait()
 		n.host.RemoveStreamHandler(HelloProtocolID)
 		n.host.RemoveStreamHandler(PEXProtocolID)
 		if err := n.cache.Flush(); err != nil {

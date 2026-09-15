@@ -131,6 +131,8 @@ The helper records current identity/state, creates a backup while stopped, pulls
 
 Copy one `bootstrap_multiaddrs` value from `status.sh` into the Windows NORMAL profile's `p2p.bootstrap_addresses`, using the same frozen GenesisID. Start the local Windows node, then inspect `zionctl status` and `zionctl peers`. Windows needs only outbound UDP connectivity; no inbound port forwarding, UPnP, relay, AutoNAT, DHT, or hole punching is required or introduced in v0.1.
 
+The NORMAL node keeps that authenticated bootstrap address as a lifetime re-dial candidate. If the public host or container restarts, leave Windows ZION running: the outbound count falls, retries follow bounded exponential backoff with jitter, DNS is resolved on subsequent dials, and the same `/p2p/<PeerID>` must authenticate before the peer becomes usable again. Follow the real-host procedure in `docs/operations/persistent-bootstrap-reconnect.md` after installing binaries and images built from the same hotfix commit.
+
 ## Observe and troubleshoot
 
 Record evidence for D2B/D3 with `docker stats`, `free -h`, `df -h`, `bash deploy/public-host/status.sh`, and bounded logs. Diagnose before changing data:

@@ -15,7 +15,7 @@ before_network="$(json_string_field "$before" network_id)"
 before_genesis="$(json_string_field "$before" genesis_id)"
 current_image="$(docker inspect --format '{{.Config.Image}}' "$CONTAINER_NAME")"
 [[ -n "$current_image" ]] || die "cannot determine the running image for pre-update backup"
-ZION_IMAGE="$current_image" "$SCRIPT_DIR/backup.sh" --keep-stopped
+ZION_IMAGE="$current_image" bash "$SCRIPT_DIR/backup.sh" --keep-stopped
 ensure_image
 verify_with_image
 compose up -d --no-build --force-recreate "$SERVICE_NAME"
